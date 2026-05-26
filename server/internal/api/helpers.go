@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"expense-tracker/internal/wideevent"
@@ -19,6 +20,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	wideevent.AddAttrs(r.Context(), slog.String("error", msg))
 	writeJSON(w, status, errorResponse{
 		Error:     msg,
 		RequestID: wideevent.RequestID(r.Context()),
