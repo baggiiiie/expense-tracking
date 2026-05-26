@@ -69,6 +69,7 @@ func NewRouter(services RouterServices, syncSecret string) http.Handler {
 	r.Use(observabilityMiddleware)
 
 	r.Get("/api/health", healthHandler)
+	r.Post("/api/auth/login", loginHandler(syncSecret))
 
 	r.Group(func(r chi.Router) {
 		if syncSecret != "" {

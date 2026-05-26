@@ -36,8 +36,8 @@ async function handleUnauthorized(): Promise<void> {
 	markUnauthenticated();
 	if (browser) {
 		const here = window.location.pathname;
-		if (here !== '/settings') {
-			await goto('/settings?reauth=1');
+		if (here !== '/login') {
+			await goto('/login');
 		}
 	}
 }

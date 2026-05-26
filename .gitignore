@@ -5,3 +5,4 @@ xcuserdata/
 *.db-wal
 *.db-shm
 server/secret.json
+.env
