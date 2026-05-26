@@ -10,14 +10,14 @@ import (
 )
 
 type walletSuggestionRequest struct {
-	ID              string  `json:"id"`
-	Merchant        string  `json:"merchant"`
-	Amount          *int64  `json:"amount"`
-	Currency        string  `json:"currency"`
-	CapturedAt      int64   `json:"captured_at"`
-	CardName        *string `json:"card_name"`
-	Source          string  `json:"source"`
-	ClientUpdatedAt int64   `json:"client_updated_at"`
+	ID              string   `json:"id"`
+	Merchant        string   `json:"merchant"`
+	Amount          *float64 `json:"amount"`
+	Currency        string   `json:"currency"`
+	CapturedAt      float64  `json:"captured_at"`
+	CardName        *string  `json:"card_name"`
+	Source          string   `json:"source"`
+	ClientUpdatedAt float64  `json:"client_updated_at"`
 }
 type confirmWalletSuggestionRequest struct {
 	ID              string `json:"id"`
@@ -38,7 +38,12 @@ func createWalletSuggestion(wallet WalletSuggestionService) http.HandlerFunc {
 			writeError(w, r, http.StatusBadRequest, "invalid request body")
 			return
 		}
-		row, err := wallet.Create(r.Context(), service.WalletSuggestionInput{ID: req.ID, Amount: req.Amount, Currency: req.Currency, Merchant: req.Merchant, CardName: req.CardName, CapturedAt: req.CapturedAt, Source: req.Source, ClientUpdatedAt: req.ClientUpdatedAt})
+		var amount *int64
+		if req.Amount != nil {
+			v := int64(*req.Amount)
+			amount = &v
+		}
+		row, err := wallet.Create(r.Context(), service.WalletSuggestionInput{ID: req.ID, Amount: amount, Currency: req.Currency, Merchant: req.Merchant, CardName: req.CardName, CapturedAt: int64(req.CapturedAt), Source: req.Source, ClientUpdatedAt: int64(req.ClientUpdatedAt)})
 		if err != nil {
 			writeError(w, r, http.StatusUnprocessableEntity, err.Error())
 			return

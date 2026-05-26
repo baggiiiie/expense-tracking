@@ -9,6 +9,8 @@ import (
 
 	"expense-tracker/internal/repository"
 	dbsqlc "expense-tracker/internal/repository/sqlc"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -61,10 +63,10 @@ type WalletSuggestion struct {
 
 func (s *WalletSuggestionService) Create(ctx context.Context, in WalletSuggestionInput) (*WalletSuggestion, error) {
 	if in.ID == "" {
-		return nil, fmt.Errorf("id is required")
+		in.ID = uuid.New().String()
 	}
 	if in.CapturedAt == 0 {
-		return nil, fmt.Errorf("captured_at is required")
+		in.CapturedAt = time.Now().Unix()
 	}
 	if in.Source == "" {
 		in.Source = "shortcut"
