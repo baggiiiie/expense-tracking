@@ -28,9 +28,6 @@
 		onCancel?: () => void;
 	} = $props();
 
-	// Snapshot the props once: the form is recreated when the user navigates
-	// to a different expense, so reactively re-initializing on every prop
-	// change would clobber in-progress edits.
 	let amountText = $state(
 		untrack(() => (initial?.amount != null ? (initial.amount / 100).toFixed(2) : ''))
 	);
@@ -74,25 +71,26 @@
 </script>
 
 <form onsubmit={submit}>
-	<label>
-		<span>Amount</span>
-		<input
-			type="number"
-			step="0.01"
-			min="0"
-			inputmode="decimal"
-			bind:value={amountText}
-			required
-		/>
-	</label>
+	<div class="form-grid">
+		<label class="field">
+			<span class="field-label">Amount</span>
+			<input
+				type="number"
+				step="0.01"
+				min="0"
+				inputmode="decimal"
+				bind:value={amountText}
+				required
+			/>
+		</label>
+		<label class="field">
+			<span class="field-label">Currency</span>
+			<input type="text" maxlength="3" bind:value={currency} required />
+		</label>
+	</div>
 
-	<label>
-		<span>Currency</span>
-		<input type="text" maxlength="3" bind:value={currency} required />
-	</label>
-
-	<label>
-		<span>Category</span>
+	<label class="field">
+		<span class="field-label">Category</span>
 		<select bind:value={categoryId} required>
 			{#each categories as cat}
 				<option value={cat.id}>{cat.icon} {cat.name}</option>
@@ -100,27 +98,27 @@
 		</select>
 	</label>
 
-	<label>
-		<span>Merchant</span>
-		<input type="text" bind:value={merchant} />
+	<label class="field">
+		<span class="field-label">Merchant</span>
+		<input type="text" placeholder="Where did you spend?" bind:value={merchant} />
 	</label>
 
-	<label>
-		<span>Note</span>
-		<input type="text" bind:value={description} />
+	<label class="field">
+		<span class="field-label">Note</span>
+		<input type="text" placeholder="Optional note" bind:value={description} />
 	</label>
 
-	<label>
-		<span>Date</span>
+	<label class="field">
+		<span class="field-label">Date</span>
 		<input type="date" bind:value={dateValue} required />
 	</label>
 
 	{#if error}<p class="error">{error}</p>{/if}
 
 	<div class="actions">
-		<button type="submit" disabled={busy}>{submitLabel}</button>
+		<button type="submit" class="btn-submit" disabled={busy}>{submitLabel}</button>
 		{#if onCancel}
-			<button type="button" class="ghost" onclick={onCancel} disabled={busy}>Cancel</button>
+			<button type="button" class="btn-cancel" onclick={onCancel} disabled={busy}>Cancel</button>
 		{/if}
 	</div>
 </form>
@@ -129,46 +127,89 @@
 	form {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 16px;
 	}
-	label {
+
+	.form-grid {
+		display: grid;
+		grid-template-columns: 1fr 100px;
+		gap: 10px;
+	}
+
+	.field {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		font-weight: 600;
+		gap: 6px;
 	}
+
+	.field-label {
+		font-size: 13px;
+		font-weight: 600;
+		color: #666;
+	}
+
 	input,
 	select {
-		border: 1px solid #b8c4d2;
-		border-radius: 8px;
-		padding: 10px;
+		padding: 12px 14px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 12px;
+		font-size: 16px;
+		background: #fafafa;
+		transition: border-color 0.15s;
+	}
+
+	input:focus,
+	select:focus {
+		outline: none;
+		border-color: #007AFF;
 		background: white;
 	}
+
+	input::placeholder {
+		color: #bbb;
+	}
+
 	.actions {
 		display: flex;
-		gap: 8px;
+		gap: 10px;
 		margin-top: 8px;
 	}
-	button {
+
+	.btn-submit {
 		flex: 1;
-		border: 0;
-		border-radius: 8px;
-		padding: 12px;
-		background: #0f172a;
+		padding: 14px;
+		border: none;
+		border-radius: 12px;
+		background: #1a1a1a;
 		color: white;
-		font-weight: 700;
+		font-size: 16px;
+		font-weight: 600;
 		cursor: pointer;
 	}
-	button[disabled] {
-		opacity: 0.6;
+
+	.btn-submit:disabled {
+		opacity: 0.5;
 	}
-	.ghost {
-		background: #e2e8f0;
-		color: #0f172a;
+
+	.btn-cancel {
+		flex: 1;
+		padding: 14px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 12px;
+		background: white;
+		color: #1a1a1a;
+		font-size: 16px;
+		font-weight: 600;
+		cursor: pointer;
 	}
+
 	.error {
 		margin: 0;
-		color: #991b1b;
-		font-weight: 600;
+		padding: 10px 14px;
+		background: #fef2f2;
+		color: #dc2626;
+		border-radius: 10px;
+		font-size: 14px;
+		font-weight: 500;
 	}
 </style>

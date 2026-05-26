@@ -2,7 +2,39 @@
 	import { onMount } from 'svelte';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
 	import type { Expense, ExpenseListResponse } from '$lib/types';
-	import { dayKey, formatDate, formatMoney } from '$lib/util';
+	import { dayKey, formatDate, formatMoney, formatTime } from '$lib/util';
+
+	const categoryColors: Record<string, string> = {
+		'Food': '#FF9500',
+		'Transport': '#007AFF',
+		'Shopping': '#FF2D55',
+		'Entertainment': '#AF52DE',
+		'Bills': '#FF3B30',
+		'Health': '#34C759',
+		'Education': '#5856D6',
+		'Travel': '#00C7BE',
+		'Other': '#8E8E93',
+	};
+
+	const categoryEmojis: Record<string, string> = {
+		'Food': '🍽️',
+		'Transport': '🚗',
+		'Shopping': '🛒',
+		'Entertainment': '🎬',
+		'Bills': '📄',
+		'Health': '❤️',
+		'Education': '📚',
+		'Travel': '✈️',
+		'Other': '💸',
+	};
+
+	function getCategoryColor(category: string): string {
+		return categoryColors[category] || '#8E8E93';
+	}
+
+	function getCategoryEmoji(category: string): string {
+		return categoryEmojis[category] || '💸';
+	}
 
 	let expenses = $state<Expense[]>([]);
 	let cursor = $state<number | undefined>(undefined);
@@ -10,7 +42,7 @@
 	let loadingMore = $state(false);
 	let error = $state('');
 
-	type Group = { dayKey: string; date: number; items: Expense[] };
+	type Group = { dayKey: string; date: number; items: Expense[]; dailyTotal: number };
 	const groups: Group[] = $derived.by(() => {
 		const map = new Map<string, Group>();
 		for (const e of expenses) {
@@ -18,11 +50,28 @@
 			const existing = map.get(key);
 			if (existing) {
 				existing.items.push(e);
+				existing.dailyTotal += e.amount;
 			} else {
-				map.set(key, { dayKey: key, date: e.date, items: [e] });
+				map.set(key, { dayKey: key, date: e.date, items: [e], dailyTotal: e.amount });
 			}
 		}
 		return Array.from(map.values()).sort((a, b) => b.date - a.date);
+	});
+
+	const monthlyTotal = $derived.by(() => {
+		const now = new Date();
+		const currentMonth = now.getMonth();
+		const currentYear = now.getFullYear();
+		let total = 0;
+		let currency = 'SGD';
+		for (const e of expenses) {
+			const d = new Date(e.date * 1000);
+			if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+				total += e.amount;
+				currency = e.currency;
+			}
+		}
+		return { total, currency };
 	});
 
 	async function loadFirstPage() {
@@ -65,38 +114,63 @@
 		}
 	}
 
+	function formatMonthlyAmount(cents: number): string {
+		const major = cents / 100;
+		return major.toFixed(2);
+	}
+
 	onMount(loadFirstPage);
 </script>
 
-<div class="bar">
-	<h2>Expenses</h2>
-	<a class="primary" href="/expenses/new">+ Add</a>
+<!-- Monthly total header -->
+<div class="monthly-header">
+	<div class="monthly-label">
+		<span>Spent</span>
+		<span class="month-pill">this month</span>
+	</div>
+	<div class="monthly-amount">
+		<span class="currency">{monthlyTotal.currency}</span>
+		<span class="amount">{formatMonthlyAmount(monthlyTotal.total)}</span>
+	</div>
 </div>
 
 {#if loading}
-	<p>Loading…</p>
+	<div class="empty-state">
+		<div class="empty-icon">⏳</div>
+		<p class="empty-title">Loading…</p>
+	</div>
 {:else if error}
-	<p class="error">{error} <button type="button" onclick={loadFirstPage}>Retry</button></p>
+	<div class="empty-state">
+		<div class="empty-icon">⚠️</div>
+		<p class="empty-title">Something went wrong</p>
+		<p class="empty-desc">{error}</p>
+		<button type="button" class="retry-btn" onclick={loadFirstPage}>Retry</button>
+	</div>
 {:else if expenses.length === 0}
-	<p>No expenses yet.</p>
+	<div class="empty-state">
+		<div class="empty-icon">📥</div>
+		<p class="empty-title">No Expenses</p>
+		<p class="empty-desc">Tap + to add your first expense</p>
+	</div>
 {:else}
 	{#each groups as group (group.dayKey)}
-		<section>
-			<h3>{formatDate(group.date)}</h3>
-			<ul>
-				{#each group.items as exp (exp.id)}
-					<li>
-						<a class="row" href={`/expenses/${exp.id}`}>
-							<div>
-								<div class="merchant">{exp.merchant || exp.description || exp.category}</div>
-								<div class="sub">{exp.category}</div>
-							</div>
-							<div class="amount">{formatMoney(exp.amount, exp.currency)}</div>
-						</a>
-						<button type="button" class="del" onclick={() => remove(exp.id)} aria-label="Delete">×</button>
-					</li>
-				{/each}
-			</ul>
+		<section class="day-section">
+			<div class="day-header">
+				<span>{formatDate(group.date)}</span>
+				<span>{formatMoney(group.dailyTotal, expenses[0]?.currency)}</span>
+			</div>
+			{#each group.items as exp (exp.id)}
+				<a class="expense-row" href={`/expenses/${exp.id}`}>
+					<div class="row-icon" style="background: {getCategoryColor(exp.category)}20; color: {getCategoryColor(exp.category)}">
+						{getCategoryEmoji(exp.category)}
+					</div>
+					<div class="row-info">
+						<div class="row-merchant">{exp.merchant || exp.description || exp.category}</div>
+						<div class="row-time">{formatTime(exp.date)}</div>
+					</div>
+					<div class="row-amount">-{formatMoney(exp.amount, exp.currency)}</div>
+				</a>
+			{/each}
 		</section>
 	{/each}
 
@@ -107,89 +181,238 @@
 	{/if}
 {/if}
 
+<!-- Floating Action Button -->
+<a href="/expenses/new" class="fab" aria-label="Add Expense">
+	<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+		<line x1="12" y1="5" x2="12" y2="19"/>
+		<line x1="5" y1="12" x2="19" y2="12"/>
+	</svg>
+</a>
+
 <style>
-	.bar {
+	/* Monthly Total Header — compact for mobile */
+	.monthly-header {
+		text-align: center;
+		padding: 20px 0 16px;
+	}
+
+	.monthly-label {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16px;
+		justify-content: center;
+		gap: 8px;
+		font-size: 16px;
+		font-weight: 600;
+		color: #1a1a1a;
 	}
-	.bar h2 {
-		margin: 0;
+
+	.month-pill {
+		padding: 2px 10px;
+		border: 1.5px solid #e8e8e8;
+		border-radius: 999px;
+		font-size: 16px;
+		font-weight: 600;
 	}
-	.primary {
-		background: #0f172a;
-		color: white;
-		text-decoration: none;
-		padding: 8px 12px;
-		border-radius: 8px;
-		font-weight: 700;
+
+	.monthly-amount {
+		margin-top: 8px;
+		display: flex;
+		align-items: baseline;
+		justify-content: center;
+		gap: 3px;
 	}
-	section {
-		margin-top: 16px;
+
+	.monthly-amount .currency {
+		font-size: 22px;
+		font-weight: 400;
+		color: #999;
 	}
-	h3 {
-		font-size: 13px;
-		text-transform: uppercase;
-		color: #64748b;
-		margin: 0 0 6px;
+
+	.monthly-amount .amount {
+		font-size: 38px;
+		font-weight: 400;
+		letter-spacing: -1px;
 	}
-	ul {
-		list-style: none;
-		margin: 0;
-		padding: 0;
+
+	@media (min-width: 640px) {
+		.monthly-amount .currency { font-size: 28px; }
+		.monthly-amount .amount { font-size: 48px; }
+		.monthly-label { font-size: 18px; }
+		.month-pill { font-size: 18px; }
+	}
+
+	/* Empty State */
+	.empty-state {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-	}
-	li {
-		display: flex;
-		gap: 6px;
-		align-items: stretch;
-	}
-	.row {
-		flex: 1;
-		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		background: white;
-		padding: 12px 14px;
-		border-radius: 10px;
-		text-decoration: none;
-		color: inherit;
-		border: 1px solid #e2e8f0;
+		justify-content: center;
+		padding: 60px 16px;
+		text-align: center;
 	}
-	.merchant {
-		font-weight: 700;
+
+	.empty-icon {
+		font-size: 40px;
+		margin-bottom: 12px;
+		opacity: 0.6;
 	}
-	.sub {
-		color: #64748b;
-		font-size: 13px;
-	}
-	.amount {
-		font-weight: 700;
-	}
-	.del {
-		border: 0;
-		border-radius: 10px;
-		padding: 0 12px;
-		background: #fee2e2;
-		color: #991b1b;
+
+	.empty-title {
+		margin: 0;
 		font-size: 18px;
 		font-weight: 700;
-		cursor: pointer;
+		color: #1a1a1a;
 	}
-	.loadmore {
-		display: block;
-		margin: 16px auto;
-		padding: 10px 16px;
-		border: 1px solid #cbd5e1;
+
+	.empty-desc {
+		margin: 4px 0 0;
+		font-size: 14px;
+		color: #999;
+	}
+
+	.retry-btn {
+		margin-top: 14px;
+		padding: 10px 20px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 10px;
 		background: white;
-		border-radius: 8px;
+		font-size: 14px;
 		font-weight: 600;
 		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
 	}
-	.error {
-		color: #991b1b;
+
+	/* Day Sections */
+	.day-section {
+		margin-top: 20px;
+	}
+
+	.day-header {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 2px 6px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #888;
+	}
+
+	/* Expense Row — touch-friendly */
+	.expense-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 2px;
+		text-decoration: none;
+		color: inherit;
+		border-bottom: 0.5px solid #f2f2f2;
+		-webkit-tap-highlight-color: transparent;
+		min-height: 56px;
+	}
+
+	.expense-row:last-child {
+		border-bottom: none;
+	}
+
+	.expense-row:active {
+		background: #f8f8f8;
+		border-radius: 12px;
+		margin: 0 -8px;
+		padding: 10px 10px;
+	}
+
+	.row-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: 10px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 18px;
+		flex-shrink: 0;
+	}
+
+	.row-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.row-merchant {
+		font-size: 15px;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.row-time {
+		font-size: 13px;
+		color: #999;
+		margin-top: 1px;
+	}
+
+	.row-amount {
+		font-size: 15px;
+		font-weight: 600;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	@media (min-width: 640px) {
+		.row-icon { width: 44px; height: 44px; font-size: 20px; border-radius: 12px; }
+		.row-merchant { font-size: 16px; }
+		.row-amount { font-size: 17px; }
+	}
+
+	/* Load more */
+	.loadmore {
+		display: block;
+		width: 100%;
+		margin: 16px 0;
+		padding: 12px;
+		border: 1.5px solid #e8e8e8;
+		background: white;
+		border-radius: 12px;
+		font-weight: 600;
+		font-size: 14px;
+		cursor: pointer;
+		color: #666;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.loadmore:active {
+		background: #f8f8f8;
+	}
+
+	/* FAB — positioned for thumb reach */
+	.fab {
+		position: fixed;
+		bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+		right: 16px;
+		width: 52px;
+		height: 52px;
+		border-radius: 50%;
+		background: #007AFF;
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4px 14px rgba(0, 122, 255, 0.3);
+		text-decoration: none;
+		z-index: 5;
+		-webkit-tap-highlight-color: transparent;
+		transition: transform 0.12s ease;
+	}
+
+	.fab:active {
+		transform: scale(0.9);
+	}
+
+	@media (min-width: 640px) {
+		.fab {
+			width: 56px;
+			height: 56px;
+			right: 20px;
+			bottom: 90px;
+		}
 	}
 </style>

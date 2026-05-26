@@ -8,12 +8,12 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	// Form state — used for both add and edit (when editingId is set).
 	let editingId = $state<string | null>(null);
 	let name = $state('');
 	let icon = $state('💸');
 	let budgetText = $state('');
 	let busy = $state(false);
+	let showForm = $state(false);
 
 	async function load() {
 		loading = true;
@@ -33,6 +33,7 @@
 		icon = '💸';
 		budgetText = '';
 		error = '';
+		showForm = false;
 	}
 
 	function startEdit(cat: Category) {
@@ -40,6 +41,7 @@
 		name = cat.name;
 		icon = cat.icon;
 		budgetText = cat.budget != null ? (cat.budget / 100).toFixed(2) : '';
+		showForm = true;
 	}
 
 	async function submit(event: SubmitEvent) {
@@ -85,123 +87,307 @@
 	onMount(load);
 </script>
 
-<h2>Categories</h2>
-
-<form onsubmit={submit}>
-	<input type="text" placeholder="Icon" maxlength="4" bind:value={icon} />
-	<input type="text" placeholder="Name" bind:value={name} required />
-	<input
-		type="number"
-		step="0.01"
-		min="0"
-		inputmode="decimal"
-		placeholder="Monthly budget (optional)"
-		bind:value={budgetText}
-	/>
-	<div class="actions">
-		<button type="submit" disabled={busy}>{editingId ? 'Save' : 'Add'}</button>
-		{#if editingId}
-			<button type="button" class="ghost" onclick={reset}>Cancel</button>
-		{/if}
+{#if showForm}
+	<!-- Form Modal -->
+	<div class="modal-overlay" onclick={reset}></div>
+	<div class="modal">
+		<div class="modal-header">
+			<h3>{editingId ? 'Edit Category' : 'New Category'}</h3>
+			<button type="button" class="modal-close" onclick={reset}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+					<line x1="18" y1="6" x2="6" y2="18"/>
+					<line x1="6" y1="6" x2="18" y2="18"/>
+				</svg>
+			</button>
+		</div>
+		<form onsubmit={submit}>
+			<div class="form-row">
+				<label class="icon-field">
+					<input type="text" maxlength="4" bind:value={icon} class="icon-input" />
+				</label>
+				<label class="name-field">
+					<input type="text" placeholder="Category name" bind:value={name} required />
+				</label>
+			</div>
+			<label class="budget-field">
+				<span>Monthly budget (optional)</span>
+				<input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" bind:value={budgetText} />
+			</label>
+			{#if error}<p class="error">{error}</p>{/if}
+			<button type="submit" class="submit-btn" disabled={busy}>
+				{editingId ? 'Save Changes' : 'Add Category'}
+			</button>
+		</form>
 	</div>
-</form>
-
-{#if error}<p class="error">{error}</p>{/if}
-
-{#if loading}
-	<p>Loading…</p>
-{:else if categories.length === 0}
-	<p>No categories yet.</p>
-{:else}
-	<ul>
-		{#each categories as cat (cat.id)}
-			<li>
-				<button type="button" class="row" onclick={() => startEdit(cat)}>
-					<span class="icon">{cat.icon}</span>
-					<span class="name">{cat.name}</span>
-					<span class="budget">{cat.budget != null ? formatMoney(cat.budget) : ''}</span>
-				</button>
-				<button type="button" class="del" onclick={() => remove(cat.id)} aria-label="Delete">×</button>
-			</li>
-		{/each}
-	</ul>
 {/if}
 
+{#if loading}
+	<div class="empty-state">
+		<div class="empty-icon">⏳</div>
+		<p class="empty-title">Loading…</p>
+	</div>
+{:else if categories.length === 0}
+	<div class="empty-state">
+		<div class="empty-icon">🏷️</div>
+		<p class="empty-title">No Categories</p>
+		<p class="empty-desc">Tap + to create your first category</p>
+	</div>
+{:else}
+	<div class="category-list">
+		{#each categories as cat (cat.id)}
+			<button type="button" class="category-row" onclick={() => startEdit(cat)}>
+				<div class="cat-icon">{cat.icon}</div>
+				<div class="cat-info">
+					<div class="cat-name">{cat.name}</div>
+					{#if cat.budget != null}
+						<div class="cat-budget">Budget: {formatMoney(cat.budget)}</div>
+					{/if}
+				</div>
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round">
+					<polyline points="9 18 15 12 9 6"/>
+				</svg>
+			</button>
+		{/each}
+	</div>
+{/if}
+
+<!-- Add FAB -->
+<button type="button" class="fab" onclick={() => { showForm = true; }} aria-label="Add Category">
+	<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+		<line x1="12" y1="5" x2="12" y2="19"/>
+		<line x1="5" y1="12" x2="19" y2="12"/>
+	</svg>
+</button>
+
 <style>
-	form {
-		display: grid;
-		grid-template-columns: 64px 1fr 1fr;
-		gap: 8px;
-		margin: 12px 0;
-	}
-	input {
-		border: 1px solid #b8c4d2;
-		border-radius: 8px;
-		padding: 10px;
-		background: white;
-	}
-	.actions {
-		grid-column: 1 / -1;
+	/* Category List */
+	.category-list {
 		display: flex;
-		gap: 8px;
+		flex-direction: column;
+		margin-top: 8px;
 	}
-	button {
-		border: 0;
-		border-radius: 8px;
-		padding: 10px 14px;
-		background: #0f172a;
-		color: white;
+
+	.category-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 4px;
+		border: none;
+		border-bottom: 0.5px solid #f2f2f2;
+		background: none;
+		cursor: pointer;
+		text-align: left;
+		width: 100%;
+		color: inherit;
+		min-height: 52px;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.category-row:active {
+		background: #f8f8f8;
+		border-radius: 10px;
+	}
+
+	.category-row:last-child {
+		border-bottom: none;
+	}
+
+	.cat-icon {
+		font-size: 24px;
+		width: 32px;
+		text-align: center;
+	}
+
+	.cat-info {
+		flex: 1;
+	}
+
+	.cat-name {
+		font-size: 15px;
+		font-weight: 600;
+	}
+
+	.cat-budget {
+		font-size: 13px;
+		color: #888;
+		margin-top: 2px;
+	}
+
+	/* Empty State */
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 60px 16px;
+		text-align: center;
+	}
+
+	.empty-icon {
+		font-size: 40px;
+		margin-bottom: 12px;
+		opacity: 0.6;
+	}
+
+	.empty-title {
+		margin: 0;
+		font-size: 18px;
 		font-weight: 700;
+	}
+
+	.empty-desc {
+		margin: 4px 0 0;
+		font-size: 14px;
+		color: #999;
+	}
+
+	/* Modal */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.3);
+		z-index: 50;
+	}
+
+	.modal {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background: white;
+		border-radius: 20px 20px 0 0;
+		padding: 20px;
+		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+		z-index: 51;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 18px;
+		font-weight: 700;
+	}
+
+	.modal-close {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: none;
+		background: #f5f5f5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		cursor: pointer;
 	}
-	button.ghost {
-		background: #e2e8f0;
-		color: #0f172a;
+
+	form {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
 	}
-	ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+
+	.form-row {
+		display: flex;
+		gap: 10px;
+	}
+
+	.icon-field {
+		flex: 0 0 56px;
+	}
+
+	.icon-input {
+		width: 100%;
+		text-align: center;
+		font-size: 24px;
+		padding: 10px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 12px;
+		background: #fafafa;
+	}
+
+	.name-field {
+		flex: 1;
+	}
+
+	.name-field input {
+		width: 100%;
+		padding: 14px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 12px;
+		font-size: 16px;
+		font-weight: 500;
+		background: #fafafa;
+	}
+
+	.budget-field {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
 	}
-	li {
-		display: flex;
-		gap: 6px;
+
+	.budget-field span {
+		font-size: 13px;
+		font-weight: 600;
+		color: #666;
 	}
-	.row {
-		flex: 1;
-		display: grid;
-		grid-template-columns: 32px 1fr auto;
-		align-items: center;
-		gap: 12px;
-		background: white;
-		color: inherit;
-		border: 1px solid #e2e8f0;
-		border-radius: 10px;
-		padding: 12px;
-		text-align: left;
+
+	.budget-field input {
+		padding: 14px;
+		border: 1.5px solid #e0e0e0;
+		border-radius: 12px;
+		font-size: 16px;
+		background: #fafafa;
+	}
+
+	.submit-btn {
+		padding: 14px;
+		border: none;
+		border-radius: 12px;
+		background: #1a1a1a;
+		color: white;
+		font-size: 16px;
+		font-weight: 600;
 		cursor: pointer;
 	}
-	.icon {
-		font-size: 20px;
+
+	.submit-btn:disabled {
+		opacity: 0.5;
 	}
-	.name {
-		font-weight: 700;
-	}
-	.budget {
-		color: #64748b;
-		font-size: 13px;
-	}
-	.del {
-		background: #fee2e2;
-		color: #991b1b;
-		font-size: 18px;
-		padding: 0 14px;
-		border-radius: 10px;
-	}
+
 	.error {
-		color: #991b1b;
+		margin: 0;
+		color: #dc2626;
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	/* FAB */
+	.fab {
+		position: fixed;
+		bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+		right: 16px;
+		width: 52px;
+		height: 52px;
+		border-radius: 50%;
+		background: #007AFF;
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4px 14px rgba(0, 122, 255, 0.3);
+		border: none;
+		cursor: pointer;
+		z-index: 5;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.fab:active {
+		transform: scale(0.9);
 	}
 </style>

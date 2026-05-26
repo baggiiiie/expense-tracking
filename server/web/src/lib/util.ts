@@ -49,6 +49,11 @@ export function formatDateTime(unixSeconds: number): string {
 	return d.toLocaleString();
 }
 
+export function formatTime(unixSeconds: number): string {
+	const d = new Date(unixSeconds * 1000);
+	return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 // dayKey produces a "YYYY-MM-DD" bucket using the local timezone, suitable
 // for grouping the expense feed.
 export function dayKey(unixSeconds: number): string {

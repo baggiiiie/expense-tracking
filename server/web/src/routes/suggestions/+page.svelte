@@ -72,114 +72,269 @@
 	onMount(load);
 </script>
 
-<h2>Wallet suggestions</h2>
+{#if active && prefs}
+	<!-- Confirm suggestion view -->
+	<div class="confirm-view">
+		<button type="button" class="back-btn" onclick={() => active = null}>
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+				<polyline points="15 18 9 12 15 6"/>
+			</svg>
+			Back
+		</button>
 
-{#if loading}
-	<p>Loading…</p>
+		<div class="suggestion-card">
+			<div class="suggestion-header">
+				<span class="card-icon">💳</span>
+				<div>
+					<div class="suggestion-merchant">{active.merchant}</div>
+					<div class="suggestion-meta">
+						{formatDateTime(active.captured_at)} · {active.source}
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<ExpenseForm
+			initial={{
+				amount: active.amount ?? 0,
+				currency: active.currency,
+				merchant: active.merchant,
+				date: active.captured_at
+			}}
+			{categories}
+			defaultCurrency={prefs.currency}
+			submitLabel="Confirm & Save"
+			onSubmit={confirm}
+			onCancel={() => (active = null)}
+		/>
+
+		<button type="button" class="dismiss-btn" onclick={() => dismiss(active!.id)}>
+			Dismiss instead
+		</button>
+	</div>
+{:else if loading}
+	<div class="empty-state">
+		<div class="empty-icon">⏳</div>
+		<p class="empty-title">Loading…</p>
+	</div>
 {:else if error}
-	<p class="error">{error}</p>
-{:else if active && prefs}
-	<a href="/" onclick={(e) => { e.preventDefault(); active = null; }}>← Back to list</a>
-	<p class="captured">Captured {formatDateTime(active.captured_at)} via {active.source}</p>
-	<ExpenseForm
-		initial={{
-			amount: active.amount ?? 0,
-			currency: active.currency,
-			merchant: active.merchant,
-			date: active.captured_at
-		}}
-		{categories}
-		defaultCurrency={prefs.currency}
-		submitLabel="Confirm & save"
-		onSubmit={confirm}
-		onCancel={() => (active = null)}
-	/>
-	<button type="button" class="dismiss" onclick={() => dismiss(active!.id)}>Dismiss instead</button>
+	<div class="empty-state">
+		<div class="empty-icon">⚠️</div>
+		<p class="empty-title">Error</p>
+		<p class="empty-desc">{error}</p>
+	</div>
 {:else if suggestions.length === 0}
-	<p>No pending suggestions.</p>
+	<div class="empty-state">
+		<div class="empty-icon">💳</div>
+		<p class="empty-title">No Pending Suggestions</p>
+		<p class="empty-desc">Apple Pay transactions will appear here</p>
+	</div>
 {:else}
-	<ul>
+	<div class="suggestions-list">
 		{#each suggestions as s (s.id)}
-			<li>
-				<button type="button" class="row" onclick={() => (active = s)}>
-					<div>
-						<div class="merchant">{s.merchant}</div>
-						<div class="sub">
-							{formatDateTime(s.captured_at)}
-							{#if s.card_name}· {s.card_name}{/if}
+			<div class="suggestion-row">
+				<button type="button" class="suggestion-content" onclick={() => (active = s)}>
+					<div class="row-left">
+						<span class="card-badge">💳</span>
+						<div>
+							<div class="row-merchant">{s.merchant}</div>
+							<div class="row-meta">
+								{formatDateTime(s.captured_at)}
+								{#if s.card_name}· {s.card_name}{/if}
+							</div>
 						</div>
 					</div>
-					<div class="amount">{formatMoney(s.amount ?? null, s.currency)}</div>
+					<div class="row-amount">{formatMoney(s.amount ?? null, s.currency)}</div>
 				</button>
-				<button type="button" class="del" onclick={() => dismiss(s.id)} aria-label="Dismiss">×</button>
-			</li>
+				<div class="row-actions">
+					<button type="button" class="action-add" onclick={() => (active = s)}>
+						Add
+					</button>
+					<button type="button" class="action-dismiss" onclick={() => dismiss(s.id)} aria-label="Dismiss">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+							<line x1="18" y1="6" x2="6" y2="18"/>
+							<line x1="6" y1="6" x2="18" y2="18"/>
+						</svg>
+					</button>
+				</div>
+			</div>
 		{/each}
-	</ul>
+	</div>
 {/if}
 
 <style>
-	ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	/* Suggestions List */
+	.suggestions-list {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-	}
-	li {
-		display: flex;
-		gap: 6px;
-	}
-	.row {
-		flex: 1;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		background: white;
-		color: inherit;
-		border: 1px solid #e2e8f0;
-		border-radius: 10px;
-		padding: 12px 14px;
-		text-align: left;
-		cursor: pointer;
-	}
-	.merchant {
-		font-weight: 700;
-	}
-	.sub {
-		color: #64748b;
-		font-size: 13px;
-	}
-	.amount {
-		font-weight: 700;
-	}
-	.del {
-		background: #fee2e2;
-		color: #991b1b;
-		font-size: 18px;
-		padding: 0 14px;
-		border-radius: 10px;
-		border: 0;
-		cursor: pointer;
-	}
-	.dismiss {
+		gap: 12px;
 		margin-top: 12px;
-		display: block;
-		width: 100%;
-		border: 1px solid #fecaca;
+	}
+
+	.suggestion-row {
 		background: white;
-		color: #991b1b;
-		padding: 10px;
+		border: 1px solid #f0f0f0;
+		border-radius: 14px;
+		padding: 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.suggestion-content {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border: none;
+		background: none;
+		cursor: pointer;
+		text-align: left;
+		width: 100%;
+		color: inherit;
+		padding: 0;
+	}
+
+	.row-left {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.card-badge {
+		font-size: 20px;
+	}
+
+	.row-merchant {
+		font-size: 16px;
+		font-weight: 600;
+	}
+
+	.row-meta {
+		font-size: 13px;
+		color: #888;
+		margin-top: 2px;
+	}
+
+	.row-amount {
+		font-size: 17px;
+		font-weight: 600;
+	}
+
+	.row-actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.action-add {
+		flex: 1;
+		padding: 8px;
+		border: none;
 		border-radius: 8px;
+		background: #007AFF;
+		color: white;
+		font-size: 14px;
 		font-weight: 600;
 		cursor: pointer;
 	}
-	.captured {
-		color: #64748b;
-		font-size: 13px;
-		margin: 8px 0 16px;
+
+	.action-dismiss {
+		width: 36px;
+		height: 36px;
+		border: 1.5px solid #fecaca;
+		border-radius: 8px;
+		background: white;
+		color: #dc2626;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
 	}
-	.error {
-		color: #991b1b;
+
+	/* Confirm View */
+	.confirm-view {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.back-btn {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		border: none;
+		background: none;
+		cursor: pointer;
+		font-size: 15px;
+		font-weight: 500;
+		color: #007AFF;
+		padding: 0;
+	}
+
+	.suggestion-card {
+		background: #f8f9fa;
+		border-radius: 12px;
+		padding: 14px;
+	}
+
+	.suggestion-header {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.card-icon {
+		font-size: 24px;
+	}
+
+	.suggestion-merchant {
+		font-size: 16px;
+		font-weight: 600;
+	}
+
+	.suggestion-meta {
+		font-size: 13px;
+		color: #888;
+		margin-top: 2px;
+	}
+
+	.dismiss-btn {
+		margin-top: 8px;
+		padding: 12px;
+		border: 1.5px solid #fecaca;
+		border-radius: 12px;
+		background: white;
+		color: #dc2626;
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+		width: 100%;
+	}
+
+	/* Empty State */
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 80px 20px;
+		text-align: center;
+	}
+
+	.empty-icon {
+		font-size: 48px;
+		margin-bottom: 16px;
+		opacity: 0.6;
+	}
+
+	.empty-title {
+		margin: 0;
+		font-size: 20px;
+		font-weight: 700;
+	}
+
+	.empty-desc {
+		margin: 6px 0 0;
+		font-size: 15px;
+		color: #999;
 	}
 </style>

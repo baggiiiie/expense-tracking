@@ -109,6 +109,8 @@ func NewRouter(services RouterServices, syncSecret string) http.Handler {
 
 		r.Post("/api/auth/exchange", authExchange())
 
+		r.Post("/api/feedback", submitFeedback())
+
 		r.Get("/api/sync/pull", syncPull(services.Sync))
 		r.Post("/api/sync/push", syncPush(services.Sync))
 	})
