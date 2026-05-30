@@ -63,6 +63,7 @@ func submitFeedback() http.HandlerFunc {
 
 		// Build issue body
 		var body strings.Builder
+		body.WriteString("**App:** Svelte web app\n\n")
 		body.WriteString(fmt.Sprintf("**Route:** `%s`\n\n", req.Route))
 		body.WriteString(fmt.Sprintf("**Submitted:** %s\n\n", time.Now().UTC().Format(time.RFC3339)))
 		body.WriteString("---\n\n")
