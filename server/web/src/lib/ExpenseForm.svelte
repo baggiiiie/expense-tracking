@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { Category, Expense } from './types';
-	import { dateInputValue, parseAmount, unixFromDateInput } from './util';
+	import {
+		dateTimeInputValue,
+		displayCategoryIcon,
+		parseAmount,
+		unixFromDateTimeInput
+	} from './util';
 
 	type FormValue = {
 		amount: number;
@@ -36,7 +41,7 @@
 	let merchant = $state(untrack(() => initial?.merchant || ''));
 	let description = $state(untrack(() => initial?.description || ''));
 	let dateValue = $state(
-		untrack(() => dateInputValue(initial?.date ?? Math.floor(Date.now() / 1000)))
+		untrack(() => dateTimeInputValue(initial?.date ?? Math.floor(Date.now() / 1000)))
 	);
 
 	let error = $state('');
@@ -62,7 +67,7 @@
 				category_id: categoryId,
 				merchant: merchant.trim(),
 				description: description.trim(),
-				date: unixFromDateInput(dateValue)
+				date: unixFromDateTimeInput(dateValue)
 			});
 		} finally {
 			busy = false;
@@ -93,7 +98,7 @@
 		<span class="field-label">Category</span>
 		<select bind:value={categoryId} required>
 			{#each categories as cat}
-				<option value={cat.id}>{cat.icon} {cat.name}</option>
+				<option value={cat.id}>{displayCategoryIcon(cat)} {cat.name}</option>
 			{/each}
 		</select>
 	</label>
@@ -110,7 +115,7 @@
 
 	<label class="field">
 		<span class="field-label">Date</span>
-		<input type="date" bind:value={dateValue} required />
+		<input type="datetime-local" bind:value={dateValue} required />
 	</label>
 
 	{#if error}<p class="error">{error}</p>{/if}

@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
 	import type { Category, Expense, Preferences } from '$lib/types';
-	import { newId, nowMillis } from '$lib/util';
+	import { displayCategoryIcon, newId, nowMillis } from '$lib/util';
 
 	let categories = $state<Category[]>([]);
 	let prefs = $state<Preferences | null>(null);
@@ -138,7 +138,7 @@
 		<div class="controls-row">
 			<button type="button" class="control-pill" class:selected={!!selectedCategory} onclick={() => showCategoryPicker = true}>
 				{#if selectedCategory}
-					<span>{selectedCategory.icon}</span>
+					<span>{displayCategoryIcon(selectedCategory)}</span>
 					<span>{selectedCategory.name}</span>
 				{:else}
 					<span>📂</span>
@@ -163,7 +163,7 @@
 							class:selected={cat.id === selectedCategoryId}
 							onclick={() => selectCategory(cat)}
 						>
-							<span class="cat-icon">{cat.icon}</span>
+							<span class="cat-icon">{displayCategoryIcon(cat)}</span>
 							<span class="cat-name">{cat.name}</span>
 						</button>
 					{/each}

@@ -77,3 +77,52 @@ export function unixFromDateInput(value: string): number {
 	const date = new Date(y, (m ?? 1) - 1, d ?? 1);
 	return Math.floor(date.getTime() / 1000);
 }
+
+// dateTimeInputValue converts unix seconds to the "YYYY-MM-DDTHH:mm" shape
+// an <input type="datetime-local"> wants, using the local timezone.
+export function dateTimeInputValue(unixSeconds: number): string {
+	const d = new Date(unixSeconds * 1000);
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const day = String(d.getDate()).padStart(2, '0');
+	const hh = String(d.getHours()).padStart(2, '0');
+	const mm = String(d.getMinutes()).padStart(2, '0');
+	return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+// unixFromDateTimeInput parses an "YYYY-MM-DDTHH:mm" value back to unix
+// seconds at the local timezone.
+export function unixFromDateTimeInput(value: string): number {
+	const [datePart, timePart = '00:00'] = value.split('T');
+	const [y, m, d] = datePart.split('-').map((n) => Number(n));
+	const [hh, mm] = timePart.split(':').map((n) => Number(n));
+	const date = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0);
+	return Math.floor(date.getTime() / 1000);
+}
+
+// Default emoji icons for the seeded category names. Used as a fallback
+// when the stored icon is empty or is a non-emoji SF Symbol name written
+// by the iOS client.
+const defaultCategoryEmojis: Record<string, string> = {
+	'Food & Dining': '🍽️',
+	Groceries: '🛒',
+	Transport: '🚌',
+	Shopping: '🛍️',
+	Entertainment: '🎬',
+	Bills: '📄',
+	Health: '💊',
+	Other: '📦'
+};
+
+// displayCategoryIcon returns a renderable icon for a category. If the
+// stored icon is empty or looks like an SF Symbol name (ASCII letters,
+// digits, dots, etc.), fall back to the default emoji for the category
+// name so the web UI doesn't show raw text like "cart" next to "Groceries".
+export function displayCategoryIcon(category: { name: string; icon: string }): string {
+	const trimmed = (category.icon ?? '').trim();
+	const looksLikeSymbolName = trimmed === '' || /^[\x20-\x7E]+$/.test(trimmed);
+	if (looksLikeSymbolName) {
+		return defaultCategoryEmojis[category.name] ?? '💸';
+	}
+	return trimmed;
+}

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
 	import type { Category } from '$lib/types';
-	import { formatMoney, nowMillis, parseAmount } from '$lib/util';
+	import { displayCategoryIcon, formatMoney, nowMillis, parseAmount } from '$lib/util';
 
 	let categories = $state<Category[]>([]);
 	let loading = $state(true);
@@ -39,7 +39,7 @@
 	function startEdit(cat: Category) {
 		editingId = cat.id;
 		name = cat.name;
-		icon = cat.icon;
+		icon = displayCategoryIcon(cat);
 		budgetText = cat.budget != null ? (cat.budget / 100).toFixed(2) : '';
 		showForm = true;
 	}
@@ -136,7 +136,7 @@
 	<div class="category-list">
 		{#each categories as cat (cat.id)}
 			<button type="button" class="category-row" onclick={() => startEdit(cat)}>
-				<div class="cat-icon">{cat.icon}</div>
+				<div class="cat-icon">{displayCategoryIcon(cat)}</div>
 				<div class="cat-info">
 					<div class="cat-name">{cat.name}</div>
 					{#if cat.budget != null}

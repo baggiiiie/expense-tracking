@@ -4,6 +4,7 @@
 	import type { Category, Preferences, RecurringExpense } from '$lib/types';
 	import {
 		dateInputValue,
+		displayCategoryIcon,
 		formatDate,
 		formatMoney,
 		nowMillis,
@@ -32,7 +33,10 @@
 	let busy = $state(false);
 
 	const categoryName = $derived((id: string) => categories.find((c) => c.id === id)?.name ?? '—');
-	const categoryIcon = $derived((id: string) => categories.find((c) => c.id === id)?.icon ?? '💸');
+	const categoryIcon = $derived((id: string) => {
+		const cat = categories.find((c) => c.id === id);
+		return cat ? displayCategoryIcon(cat) : '💸';
+	});
 
 	function scheduleSummary(row: RecurringExpense): string {
 		switch (row.frequency) {
@@ -177,7 +181,7 @@
 				<span>Category</span>
 				<select bind:value={categoryId} required>
 					{#each categories as cat}
-						<option value={cat.id}>{cat.icon} {cat.name}</option>
+						<option value={cat.id}>{displayCategoryIcon(cat)} {cat.name}</option>
 					{/each}
 				</select>
 			</label>
