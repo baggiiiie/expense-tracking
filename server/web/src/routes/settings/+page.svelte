@@ -133,10 +133,6 @@
 					<label for="timezone">Timezone</label>
 					<input id="timezone" type="text" bind:value={prefs.timezone} />
 				</div>
-				<div class="field">
-					<label for="dateformat">Date format</label>
-					<input id="dateformat" type="text" bind:value={prefs.date_format} />
-				</div>
 				<button type="submit" class="btn-primary" disabled={prefsBusy}>
 					{prefsBusy ? 'Saving…' : 'Save Preferences'}
 				</button>

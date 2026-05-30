@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
-	import type { Expense, ExpenseListResponse } from '$lib/types';
-	import { dayKey, formatDate, formatMoney, formatTime } from '$lib/util';
+	import type { Category, Expense, ExpenseListResponse } from '$lib/types';
+	import { dayKey, displayCategoryIcon, formatDate, formatMoney, formatTime } from '$lib/util';
 
 	const categoryColors: Record<string, string> = {
 		'Food': '#FF9500',
@@ -16,31 +16,32 @@
 		'Other': '#8E8E93',
 	};
 
-	const categoryEmojis: Record<string, string> = {
-		'Food': '🍽️',
-		'Transport': '🚗',
-		'Shopping': '🛒',
-		'Entertainment': '🎬',
-		'Bills': '📄',
-		'Health': '❤️',
-		'Education': '📚',
-		'Travel': '✈️',
-		'Other': '💸',
-	};
-
 	function getCategoryColor(category: string): string {
 		return categoryColors[category] || '#8E8E93';
 	}
 
-	function getCategoryEmoji(category: string): string {
-		return categoryEmojis[category] || '💸';
-	}
-
 	let expenses = $state<Expense[]>([]);
+	let categories = $state<Category[]>([]);
 	let cursor = $state<number | undefined>(undefined);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state('');
+
+	const categoriesById: Map<string, Category> = $derived.by(
+		() => new Map(categories.map((category) => [category.id, category]))
+	);
+
+	function getExpenseCategory(expense: Expense): Category {
+		return categoriesById.get(expense.category_id) ?? {
+			id: expense.category_id,
+			name: expense.category || 'Other',
+			icon: '',
+			budget: null,
+			created_at: 0,
+			updated_at: 0,
+			client_updated_at: 0
+		};
+	}
 
 	type Group = { dayKey: string; date: number; items: Expense[]; dailyTotal: number };
 	const groups: Group[] = $derived.by(() => {
@@ -78,9 +79,13 @@
 		loading = true;
 		error = '';
 		try {
-			const data = await apiGet<ExpenseListResponse>('/api/expenses');
-			expenses = data.expenses ?? [];
-			cursor = data.next_before;
+			const [expenseData, categoryData] = await Promise.all([
+				apiGet<ExpenseListResponse>('/api/expenses'),
+				apiGet<{ categories: Category[] }>('/api/categories')
+			]);
+			expenses = expenseData.expenses ?? [];
+			categories = (categoryData.categories ?? []).filter((category) => !category.deleted_at);
+			cursor = expenseData.next_before;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 			else if (!(e instanceof ApiError)) error = String(e);
@@ -160,9 +165,10 @@
 				<span>{formatMoney(group.dailyTotal, expenses[0]?.currency)}</span>
 			</div>
 			{#each group.items as exp (exp.id)}
+				{@const category = getExpenseCategory(exp)}
 				<a class="expense-row" href={`/expenses/${exp.id}`}>
-					<div class="row-icon" style="background: {getCategoryColor(exp.category)}20; color: {getCategoryColor(exp.category)}">
-						{getCategoryEmoji(exp.category)}
+					<div class="row-icon" style="background: {getCategoryColor(category.name)}20; color: {getCategoryColor(category.name)}">
+						{displayCategoryIcon(category)}
 					</div>
 					<div class="row-info">
 						<div class="row-merchant">{exp.merchant || exp.description || exp.category}</div>

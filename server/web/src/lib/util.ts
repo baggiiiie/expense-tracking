@@ -104,6 +104,7 @@ export function unixFromDateTimeInput(value: string): number {
 // when the stored icon is empty or is a non-emoji SF Symbol name written
 // by the iOS client.
 const defaultCategoryEmojis: Record<string, string> = {
+	Food: '🍽️',
 	'Food & Dining': '🍽️',
 	Groceries: '🛒',
 	Transport: '🚌',
@@ -111,6 +112,8 @@ const defaultCategoryEmojis: Record<string, string> = {
 	Entertainment: '🎬',
 	Bills: '📄',
 	Health: '💊',
+	Education: '📚',
+	Travel: '✈️',
 	Other: '📦'
 };
 
