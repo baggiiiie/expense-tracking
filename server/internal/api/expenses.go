@@ -11,14 +11,14 @@ import (
 )
 
 // expenseListDefaults bound the PWA's expense feed in two ways:
-//   - defaultWindow caps the initial page to the last week so the first paint
+//   - defaultWindow caps the initial page to the last 30 days so the first paint
 //     is cheap; the client uses the returned cursor to load older history on
 //     demand.
 //   - defaultLimit / maxLimit cap the response size regardless of how far
 //     back the caller scrolls, so a malformed cursor cannot drag down the
 //     whole feed.
 const (
-	expenseDefaultWindow = 7 * 24 * time.Hour
+	expenseDefaultWindow = 30 * 24 * time.Hour
 	expenseDefaultLimit  = 100
 	expenseMaxLimit      = 500
 )
@@ -71,23 +71,23 @@ func createExpense(expenses ExpenseService) http.HandlerFunc {
 // Query parameters:
 //   - before: exclusive upper bound on expense date (unix seconds). Used as
 //     the cursor when scrolling back through history. Omit on the first
-//     page; the server then defaults to "newer than 7 days ago".
+//     page; the server then defaults to "newer than 30 days ago".
 //   - limit: page size. Defaults to expenseDefaultLimit, capped at
 //     expenseMaxLimit.
 //
-// The response includes a next_before cursor whenever the page filled
-// exactly to the limit — the client uses it verbatim as the before parameter
-// on the next request. When fewer rows are returned the feed has reached
-// the bottom and next_before is omitted.
+// The response includes a next_before cursor whenever at least one row is
+// returned — the client uses it verbatim as the before parameter on the next
+// request. A short first page can still have older history outside the default
+// window, so the client needs a cursor even when the limit was not filled.
 func listExpenses(expenses ExpenseService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		now := time.Now()
 
 		var (
-			before    int64
-			since     int64
-			explicit  = q.Has("before")
+			before   int64
+			since    int64
+			explicit = q.Has("before")
 		)
 		if explicit {
 			parsed, err := strconv.ParseInt(q.Get("before"), 10, 64)
@@ -133,9 +133,11 @@ func listExpenses(expenses ExpenseService) http.HandlerFunc {
 			"expenses": rows,
 			"count":    len(rows),
 		}
-		// Only advertise a cursor when the page was full; otherwise the
-		// client knows it has reached the end of the feed.
-		if len(rows) == limit {
+		// Always advertise a cursor when the page has rows. A short first
+		// page can still have older history beyond the default 30-day floor;
+		// the follow-up request disables that floor and will naturally return
+		// an empty page when there is no older history.
+		if len(rows) > 0 {
 			resp["next_before"] = rows[len(rows)-1].Date
 		}
 		writeJSON(w, http.StatusOK, resp)

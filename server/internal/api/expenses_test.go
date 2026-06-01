@@ -37,7 +37,7 @@ func (s *stubExpenseService) Update(context.Context, string, service.ExpenseInpu
 }
 func (s *stubExpenseService) Delete(context.Context, string) error { panic("not used") }
 
-func TestListExpensesDefaultsToLast7DaysAndOmitsCursorWhenShortPage(t *testing.T) {
+func TestListExpensesDefaultsToLast30DaysAndReturnsCursorWhenShortPage(t *testing.T) {
 	stub := &stubExpenseService{
 		windowRows: []service.Expense{
 			{ID: "a", Date: time.Now().Unix()},
@@ -53,9 +53,9 @@ func TestListExpensesDefaultsToLast7DaysAndOmitsCursorWhenShortPage(t *testing.T
 		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
 	}
 
-	// Default window must be roughly 7 days wide.
+	// Default window must be roughly 30 days wide.
 	windowSeconds := stub.lastWindow.Before - stub.lastWindow.Since
-	wantSeconds := int64(7*24*time.Hour/time.Second) + 1 // before is now+1
+	wantSeconds := int64(30*24*time.Hour/time.Second) + 1 // before is now+1
 	if windowSeconds < wantSeconds-2 || windowSeconds > wantSeconds+2 {
 		t.Fatalf("default window: expected ~%d seconds, got %d", wantSeconds, windowSeconds)
 	}
@@ -67,8 +67,8 @@ func TestListExpensesDefaultsToLast7DaysAndOmitsCursorWhenShortPage(t *testing.T
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if _, ok := body["next_before"]; ok {
-		t.Fatalf("partial page must not advertise next_before, got %v", body)
+	if cursor, ok := body["next_before"].(float64); !ok || int64(cursor) != stub.windowRows[0].Date {
+		t.Fatalf("partial page should advertise cursor for loading older history, got %v", body)
 	}
 }
 

@@ -149,7 +149,7 @@ func (s *ExpenseService) List(ctx context.Context) ([]Expense, error) {
 // The PWA expense feed wants to render "recent first" with the option to
 // scroll back through history, but does not want to download every expense
 // ever recorded on each cold start. Callers therefore typically pass
-// (Before=now+1, Since=now-7d, Limit=N) for the first page and then
+// (Before=now+1, Since=now-30d, Limit=N) for the first page and then
 // (Before=cursor, Since=0, Limit=N) for subsequent pages — see the API
 // handler for the default-window logic.
 type ListWindowOptions struct {
