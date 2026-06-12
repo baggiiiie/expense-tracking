@@ -58,6 +58,57 @@ fi
 
 echo "📱 Found device: $DEVICE_NAME ($DEVICE_ID)"
 
+DESTINATIONS_OUTPUT=$(mktemp -t expense_xcode_destinations)
+trap 'rm -f "$DEVICES_JSON" "$DESTINATIONS_OUTPUT"' EXIT
+if xcodebuild \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -destination "id=$DEVICE_ID" \
+    -showdestinations >"$DESTINATIONS_OUTPUT" 2>&1; then
+    :
+fi
+
+if grep -q "$DEVICE_ID" "$DESTINATIONS_OUTPUT" && grep -q "is not installed" "$DESTINATIONS_OUTPUT"; then
+    IOS_VERSION=$(grep "$DEVICE_ID" "$DESTINATIONS_OUTPUT" | sed -nE 's/.*error:iOS ([0-9.]+) is not installed.*/\1/p' | head -1)
+    DEVICE_ARCH=$(grep "$DEVICE_ID" "$DESTINATIONS_OUTPUT" | sed -nE 's/.*arch:([^,]+),.*/\1/p' | head -1)
+
+    echo "⚙️  Xcode is missing prepared support for iOS ${IOS_VERSION:-on this device}."
+    echo "   Trying to prepare device support from $DEVICE_NAME. This can take several minutes..."
+
+    PREPARE_ARGS=(-prepareDeviceSupport -platform iOS)
+    if [ -n "$IOS_VERSION" ]; then
+        PREPARE_ARGS+=(-osVersion "$IOS_VERSION")
+    fi
+    if [ -n "$DEVICE_ARCH" ]; then
+        PREPARE_ARGS+=(-architecture "$DEVICE_ARCH")
+    fi
+
+    if xcodebuild "${PREPARE_ARGS[@]}"; then
+        : >"$DESTINATIONS_OUTPUT"
+        xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -destination "id=$DEVICE_ID" \
+            -showdestinations >"$DESTINATIONS_OUTPUT" 2>&1 || true
+    fi
+
+    if grep -q "$DEVICE_ID" "$DESTINATIONS_OUTPUT" && grep -q "is not installed" "$DESTINATIONS_OUTPUT"; then
+        echo "❌ Xcode still cannot build for iOS ${IOS_VERSION:-on this device}."
+        echo "   Install the matching iOS platform in Xcode > Settings > Components,"
+        echo "   or run: xcodebuild -downloadPlatform iOS"
+        echo ""
+        cat "$DESTINATIONS_OUTPUT"
+        exit 70
+    fi
+fi
+
+if ! grep -q "$DEVICE_ID" "$DESTINATIONS_OUTPUT"; then
+    echo "❌ Xcode cannot use $DEVICE_NAME ($DEVICE_ID) as a build destination."
+    echo ""
+    cat "$DESTINATIONS_OUTPUT"
+    exit 70
+fi
+
 echo "🔨 Building..."
 xcodebuild \
     -project "$PROJECT" \
