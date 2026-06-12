@@ -1,0 +1,19 @@
+{
+  "name": "expense-tracking-flue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
+  "scripts": {
+    "resolve-issue": "flue run resolve-issue --target node",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flue/runtime": "latest",
+    "valibot": "latest"
+  },
+  "devDependencies": {
+    "@flue/cli": "latest",
+    "typescript": "latest"
+  }
+}
