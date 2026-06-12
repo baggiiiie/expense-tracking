@@ -394,6 +394,26 @@ func (q *Queries) SumExpensesByCategory(ctx context.Context, arg SumExpensesByCa
 	return items, nil
 }
 
+const sumExpensesByDateWindow = `-- name: SumExpensesByDateWindow :one
+SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS total
+FROM expenses
+WHERE deleted_at IS NULL
+  AND date >= ?1
+  AND date < ?2
+`
+
+type SumExpensesByDateWindowParams struct {
+	Since  int64 `json:"since"`
+	Before int64 `json:"before"`
+}
+
+func (q *Queries) SumExpensesByDateWindow(ctx context.Context, arg SumExpensesByDateWindowParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sumExpensesByDateWindow, arg.Since, arg.Before)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const updateExpense = `-- name: UpdateExpense :exec
 UPDATE expenses SET amount = ?, currency = ?, category_id = ?, description = ?, merchant = ?, date = ?, updated_at = ?, client_updated_at = ? WHERE id = ?
 `

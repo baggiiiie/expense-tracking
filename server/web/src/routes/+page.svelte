@@ -1,8 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiGet, apiWrite, ApiError } from '$lib/api';
+	import { apiGet, ApiError } from '$lib/api';
 	import type { Category, Expense, ExpenseListResponse } from '$lib/types';
-	import { dayKey, displayCategoryIcon, formatDate, formatMoney, formatTime } from '$lib/util';
+	import {
+		dateInputValue,
+		dayKey,
+		displayCategoryIcon,
+		formatDate,
+		formatMoney,
+		formatTime,
+		nowSeconds,
+		unixFromDateInput
+	} from '$lib/util';
 
 	const categoryColors: Record<string, string> = {
 		'Food': '#FF9500',
@@ -20,12 +29,22 @@
 		return categoryColors[category] || '#8E8E93';
 	}
 
+	type RangePreset = 'month' | 'week' | 'custom';
+
+	const initialCustomStart = (() => {
+		const now = new Date();
+		return dateInputValue(Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000));
+	})();
 	let expenses = $state<Expense[]>([]);
 	let categories = $state<Category[]>([]);
 	let cursor = $state<number | undefined>(undefined);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state('');
+	let rangePreset = $state<RangePreset>('month');
+	let customStart = $state(initialCustomStart);
+	let customEnd = $state(dateInputValue(nowSeconds()));
+	let rangeTotal = $state(0);
 
 	const categoriesById: Map<string, Category> = $derived.by(
 		() => new Map(categories.map((category) => [category.id, category]))
@@ -59,33 +78,65 @@
 		return Array.from(map.values()).sort((a, b) => b.date - a.date);
 	});
 
-	const monthlyTotal = $derived.by(() => {
-		const now = new Date();
-		const currentMonth = now.getMonth();
-		const currentYear = now.getFullYear();
-		let total = 0;
-		let currency = 'SGD';
-		for (const e of expenses) {
-			const d = new Date(e.date * 1000);
-			if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
-				total += e.amount;
-				currency = e.currency;
-			}
+	const rangeLabel = $derived.by(() => {
+		switch (rangePreset) {
+			case 'week': return 'this week';
+			case 'custom': return 'custom range';
+			case 'month':
+			default: return 'this month';
 		}
-		return { total, currency };
 	});
 
+	const summaryTotal = $derived.by(() => ({
+		total: rangeTotal,
+		currency: expenses.find((e) => e.currency)?.currency ?? 'SGD'
+	}));
+
+	function rangeBounds(): { since: number; before: number } {
+		const now = new Date();
+		const beforeNow = Math.floor(Date.now() / 1000) + 1;
+		if (rangePreset === 'week') {
+			const start = new Date(now);
+			start.setHours(0, 0, 0, 0);
+			start.setDate(start.getDate() - start.getDay());
+			return { since: Math.floor(start.getTime() / 1000), before: beforeNow };
+		}
+		if (rangePreset === 'custom') {
+			const since = unixFromDateInput(customStart);
+			const end = new Date(unixFromDateInput(customEnd) * 1000);
+			end.setDate(end.getDate() + 1);
+			return { since, before: Math.floor(end.getTime() / 1000) };
+		}
+		const start = new Date(now.getFullYear(), now.getMonth(), 1);
+		return { since: Math.floor(start.getTime() / 1000), before: beforeNow };
+	}
+
+	function expensesURL(beforeOverride?: number): string {
+		const bounds = rangeBounds();
+		const params = new URLSearchParams({
+			since: String(bounds.since),
+			before: String(beforeOverride ?? bounds.before)
+		});
+		return `/api/expenses?${params.toString()}`;
+	}
+
 	async function loadFirstPage() {
+		const bounds = rangeBounds();
+		if (bounds.before <= bounds.since) {
+			error = 'Choose an end date after the start date.';
+			return;
+		}
 		loading = true;
 		error = '';
 		try {
 			const [expenseData, categoryData] = await Promise.all([
-				apiGet<ExpenseListResponse>('/api/expenses'),
+				apiGet<ExpenseListResponse>(expensesURL()),
 				apiGet<{ categories: Category[] }>('/api/categories')
 			]);
 			expenses = expenseData.expenses ?? [];
 			categories = (categoryData.categories ?? []).filter((category) => !category.deleted_at);
 			cursor = expenseData.next_before;
+			rangeTotal = expenseData.total ?? expenses.reduce((sum, e) => sum + e.amount, 0);
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 			else if (!(e instanceof ApiError)) error = String(e);
@@ -98,7 +149,7 @@
 		if (loadingMore || cursor == null) return;
 		loadingMore = true;
 		try {
-			const data = await apiGet<ExpenseListResponse>(`/api/expenses?before=${cursor}`);
+			const data = await apiGet<ExpenseListResponse>(expensesURL(cursor));
 			expenses = [...expenses, ...(data.expenses ?? [])];
 			cursor = data.next_before;
 		} catch (e) {
@@ -108,15 +159,13 @@
 		}
 	}
 
-	async function remove(id: string) {
-		if (!confirm('Delete this expense?')) return;
-		const before = expenses;
-		expenses = expenses.filter((e) => e.id !== id);
-		const result = await apiWrite<void>('DELETE', `/api/expenses/${id}`, null, `expense:${id}`);
-		if (result.kind === 'error') {
-			expenses = before;
-			error = result.error.message;
-		}
+	async function changeRange(event: Event) {
+		rangePreset = (event.currentTarget as HTMLSelectElement).value as RangePreset;
+		await loadFirstPage();
+	}
+
+	async function applyCustomRange() {
+		await loadFirstPage();
 	}
 
 	function formatMonthlyAmount(cents: number): string {
@@ -127,15 +176,31 @@
 	onMount(loadFirstPage);
 </script>
 
-<!-- Monthly total header -->
+<!-- Range total header -->
 <div class="monthly-header">
 	<div class="monthly-label">
 		<span>Spent</span>
-		<span class="month-pill">this month</span>
+		<label class="range-picker" aria-label="Summary range">
+			<select value={rangePreset} onchange={changeRange}>
+				<option value="month">this month</option>
+				<option value="week">this week</option>
+				<option value="custom">custom range</option>
+			</select>
+		</label>
 	</div>
+	{#if rangePreset === 'custom'}
+		<div class="custom-range">
+			<input type="date" bind:value={customStart} aria-label="Custom start date" />
+			<span>to</span>
+			<input type="date" bind:value={customEnd} aria-label="Custom end date" />
+			<button type="button" onclick={applyCustomRange}>Apply</button>
+		</div>
+	{:else}
+		<div class="range-caption">{rangeLabel}</div>
+	{/if}
 	<div class="monthly-amount">
-		<span class="currency">{monthlyTotal.currency}</span>
-		<span class="amount">{formatMonthlyAmount(monthlyTotal.total)}</span>
+		<span class="currency">{summaryTotal.currency}</span>
+		<span class="amount">{formatMonthlyAmount(summaryTotal.total)}</span>
 	</div>
 </div>
 
@@ -212,12 +277,52 @@
 		color: #1a1a1a;
 	}
 
-	.month-pill {
-		padding: 2px 10px;
+	.range-picker select {
+		padding: 2px 28px 2px 10px;
 		border: 1.5px solid #e8e8e8;
 		border-radius: 999px;
 		font-size: 16px;
 		font-weight: 600;
+		background: white;
+		color: #1a1a1a;
+		cursor: pointer;
+	}
+
+	.range-caption {
+		margin-top: 4px;
+		font-size: 12px;
+		font-weight: 600;
+		color: #999;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.custom-range {
+		margin: 10px auto 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		flex-wrap: wrap;
+		font-size: 13px;
+		color: #777;
+	}
+
+	.custom-range input,
+	.custom-range button {
+		border: 1.5px solid #e8e8e8;
+		border-radius: 10px;
+		background: white;
+		font-size: 13px;
+		font-weight: 600;
+		padding: 7px 8px;
+	}
+
+	.custom-range button {
+		background: #007AFF;
+		border-color: #007AFF;
+		color: white;
+		cursor: pointer;
 	}
 
 	.monthly-amount {
@@ -244,7 +349,7 @@
 		.monthly-amount .currency { font-size: 28px; }
 		.monthly-amount .amount { font-size: 48px; }
 		.monthly-label { font-size: 18px; }
-		.month-pill { font-size: 18px; }
+		.range-picker select { font-size: 18px; }
 	}
 
 	/* Empty State */

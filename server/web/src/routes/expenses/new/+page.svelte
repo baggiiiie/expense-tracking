@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
+	import { pickDefaultCategoryId } from '$lib/default-category';
 	import type { Category, Expense, Preferences } from '$lib/types';
 	import { displayCategoryIcon, newId, nowMillis } from '$lib/util';
 
@@ -37,7 +38,7 @@
 			]);
 			categories = (c.categories ?? []).filter((cat) => !cat.deleted_at);
 			prefs = p;
-			if (categories[0]) selectedCategoryId = categories[0].id;
+			selectedCategoryId = pickDefaultCategoryId(categories);
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {

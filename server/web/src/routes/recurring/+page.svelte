@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
+	import { pickDefaultCategoryId } from '$lib/default-category';
 	import type { Category, Preferences, RecurringExpense } from '$lib/types';
 	import {
 		dateInputValue,
@@ -59,7 +60,7 @@
 			categories = (c.categories ?? []).filter((x) => !x.deleted_at);
 			prefs = p;
 			if (!currency || currency === 'USD') currency = p.currency;
-			if (!categoryId && categories[0]) categoryId = categories[0].id;
+			if (!categoryId) categoryId = pickDefaultCategoryId(categories);
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -155,7 +156,7 @@
 </script>
 
 {#if showForm}
-	<div class="modal-overlay" onclick={reset}></div>
+	<button type="button" class="modal-overlay" onclick={reset} aria-label="Close modal"></button>
 	<div class="modal">
 		<div class="modal-header">
 			<h3>{editingId ? 'Edit Recurring' : 'New Recurring'}</h3>
@@ -375,6 +376,8 @@
 	.modal-overlay {
 		position: fixed;
 		inset: 0;
+		border: none;
+		padding: 0;
 		background: rgba(0, 0, 0, 0.3);
 		z-index: 50;
 	}

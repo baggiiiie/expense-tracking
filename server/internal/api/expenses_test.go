@@ -15,8 +15,9 @@ import (
 // methods exercised by the test under inspection need real behavior; the
 // rest panic to make accidental use obvious.
 type stubExpenseService struct {
-	lastWindow service.ListWindowOptions
-	windowRows []service.Expense
+	lastWindow  service.ListWindowOptions
+	windowRows  []service.Expense
+	windowTotal int64
 }
 
 func (s *stubExpenseService) Create(context.Context, service.ExpenseInput) (*service.Expense, error) {
@@ -28,6 +29,10 @@ func (s *stubExpenseService) List(context.Context) ([]service.Expense, error) {
 func (s *stubExpenseService) ListWindow(_ context.Context, opts service.ListWindowOptions) ([]service.Expense, error) {
 	s.lastWindow = opts
 	return s.windowRows, nil
+}
+func (s *stubExpenseService) SumWindow(_ context.Context, opts service.ListWindowOptions) (int64, error) {
+	s.lastWindow = opts
+	return s.windowTotal, nil
 }
 func (s *stubExpenseService) Get(context.Context, string) (*service.Expense, error) {
 	panic("not used")
@@ -120,6 +125,29 @@ func TestListExpensesExplicitBeforeDisablesDefaultFloor(t *testing.T) {
 	}
 }
 
+func TestListExpensesAcceptsExplicitDateWindowAndReturnsTotal(t *testing.T) {
+	stub := &stubExpenseService{windowTotal: 1234}
+	h := listExpenses(stub)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/expenses?since=100&before=200&limit=10", nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if stub.lastWindow.Since != 100 || stub.lastWindow.Before != 200 {
+		t.Fatalf("window: expected [100,200), got [%d,%d)", stub.lastWindow.Since, stub.lastWindow.Before)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := int64(body["total"].(float64)); got != 1234 {
+		t.Fatalf("total: expected 1234, got %d", got)
+	}
+}
+
 func TestListExpensesCapsLimitAtMax(t *testing.T) {
 	stub := &stubExpenseService{}
 	h := listExpenses(stub)
@@ -137,7 +165,7 @@ func TestListExpensesRejectsBadParams(t *testing.T) {
 	stub := &stubExpenseService{}
 	h := listExpenses(stub)
 
-	for _, q := range []string{"before=abc", "before=0", "before=-1", "limit=abc", "limit=0"} {
+	for _, q := range []string{"before=abc", "before=0", "before=-1", "since=abc", "since=-1", "since=200&before=100", "limit=abc", "limit=0"} {
 		t.Run(q, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/expenses?"+q, nil)
 			rec := httptest.NewRecorder()

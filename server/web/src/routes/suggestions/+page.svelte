@@ -10,6 +10,7 @@
 	let prefs = $state<Preferences | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let notice = $state('');
 	let active = $state<WalletSuggestion | null>(null);
 
 	async function load() {
@@ -30,6 +31,12 @@
 		}
 	}
 
+	function openSuggestion(s: WalletSuggestion) {
+		active = s;
+		error = '';
+		notice = '';
+	}
+
 	async function confirm(value: {
 		amount: number;
 		currency: string;
@@ -39,22 +46,32 @@
 		date: number;
 	}) {
 		if (!active) return;
+		error = '';
+		notice = '';
+		const confirmedId = active.id;
 		const body = { ...value, id: newId(), client_updated_at: nowMillis() };
 		const result = await apiWrite<{ wallet_suggestion: WalletSuggestion; expense: Expense }>(
 			'POST',
-			`/api/wallet-suggestions/${active.id}/confirm`,
+			`/api/wallet-suggestions/${confirmedId}/confirm`,
 			body,
-			`wallet_suggestion:${active.id}`
+			`wallet_suggestion:${confirmedId}`
 		);
 		if (result.kind === 'error') {
 			error = result.error.message;
 			return;
 		}
+		suggestions = suggestions.filter((s) => s.id !== confirmedId);
 		active = null;
+		if (result.kind === 'queued') {
+			notice = 'Confirm queued. It will sync when the server is reachable.';
+			return;
+		}
 		await load();
 	}
 
 	async function dismiss(id: string) {
+		error = '';
+		notice = '';
 		const result = await apiWrite<WalletSuggestion>(
 			'POST',
 			`/api/wallet-suggestions/${id}/dismiss`,
@@ -65,7 +82,12 @@
 			error = result.error.message;
 			return;
 		}
+		suggestions = suggestions.filter((s) => s.id !== id);
 		if (active?.id === id) active = null;
+		if (result.kind === 'queued') {
+			notice = 'Dismiss queued. It will sync when the server is reachable.';
+			return;
+		}
 		await load();
 	}
 
@@ -75,7 +97,7 @@
 {#if active && prefs}
 	<!-- Confirm suggestion view -->
 	<div class="confirm-view">
-		<button type="button" class="back-btn" onclick={() => active = null}>
+		<button type="button" class="back-btn" onclick={() => { active = null; error = ''; }}>
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 				<polyline points="15 18 9 12 15 6"/>
 			</svg>
@@ -94,6 +116,8 @@
 			</div>
 		</div>
 
+		{#if error}<div class="error-banner">{error}</div>{/if}
+
 		<ExpenseForm
 			initial={{
 				amount: active.amount ?? 0,
@@ -105,7 +129,7 @@
 			defaultCurrency={prefs.currency}
 			submitLabel="Confirm & Save"
 			onSubmit={confirm}
-			onCancel={() => (active = null)}
+			onCancel={() => { active = null; error = ''; }}
 		/>
 
 		<button type="button" class="dismiss-btn" onclick={() => dismiss(active!.id)}>
@@ -124,16 +148,18 @@
 		<p class="empty-desc">{error}</p>
 	</div>
 {:else if suggestions.length === 0}
+	{#if notice}<div class="notice-banner">{notice}</div>{/if}
 	<div class="empty-state">
 		<div class="empty-icon">💳</div>
 		<p class="empty-title">No Pending Suggestions</p>
 		<p class="empty-desc">Apple Pay transactions will appear here</p>
 	</div>
 {:else}
+	{#if notice}<div class="notice-banner">{notice}</div>{/if}
 	<div class="suggestions-list">
 		{#each suggestions as s (s.id)}
 			<div class="suggestion-row">
-				<button type="button" class="suggestion-content" onclick={() => (active = s)}>
+				<button type="button" class="suggestion-content" onclick={() => openSuggestion(s)}>
 					<div class="row-left">
 						<span class="card-badge">💳</span>
 						<div>
@@ -147,7 +173,7 @@
 					<div class="row-amount">{formatMoney(s.amount ?? null, s.currency)}</div>
 				</button>
 				<div class="row-actions">
-					<button type="button" class="action-add" onclick={() => (active = s)}>
+					<button type="button" class="action-add" onclick={() => openSuggestion(s)}>
 						Add
 					</button>
 					<button type="button" class="action-dismiss" onclick={() => dismiss(s.id)} aria-label="Dismiss">
@@ -308,6 +334,25 @@
 		font-weight: 600;
 		cursor: pointer;
 		width: 100%;
+	}
+
+	.error-banner,
+	.notice-banner {
+		padding: 10px 14px;
+		border-radius: 10px;
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	.error-banner {
+		background: #fef2f2;
+		color: #dc2626;
+	}
+
+	.notice-banner {
+		margin: 8px 0 12px;
+		background: #eff6ff;
+		color: #1d4ed8;
 	}
 
 	/* Empty State */

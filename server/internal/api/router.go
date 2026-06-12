@@ -16,6 +16,7 @@ type ExpenseService interface {
 	Create(context.Context, service.ExpenseInput) (*service.Expense, error)
 	List(context.Context) ([]service.Expense, error)
 	ListWindow(context.Context, service.ListWindowOptions) ([]service.Expense, error)
+	SumWindow(context.Context, service.ListWindowOptions) (int64, error)
 	Get(context.Context, string) (*service.Expense, error)
 	Update(context.Context, string, service.ExpenseInput) (*service.Expense, error)
 	Delete(context.Context, string) error

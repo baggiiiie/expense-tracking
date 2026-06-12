@@ -191,6 +191,13 @@ func (s *ExpenseService) ListWindow(ctx context.Context, opts ListWindowOptions)
 	return expenses, nil
 }
 
+func (s *ExpenseService) SumWindow(ctx context.Context, opts ListWindowOptions) (int64, error) {
+	return s.queries.SumExpensesByDateWindow(ctx, dbsqlc.SumExpensesByDateWindowParams{
+		Since:  opts.Since,
+		Before: opts.Before,
+	})
+}
+
 func (s *ExpenseService) Get(ctx context.Context, id string) (*Expense, error) {
 	row, err := s.queries.GetExpenseByID(ctx, id)
 	if err != nil {

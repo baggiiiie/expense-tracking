@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { pickDefaultCategoryId } from './default-category';
 	import type { Category, Expense } from './types';
 	import {
 		dateTimeInputValue,
@@ -23,7 +24,8 @@
 		defaultCurrency,
 		submitLabel = 'Save',
 		onSubmit,
-		onCancel
+		onCancel,
+		defaultCategoryId = ''
 	}: {
 		initial?: Partial<Expense>;
 		categories: Category[];
@@ -31,13 +33,16 @@
 		submitLabel?: string;
 		onSubmit: (value: FormValue) => void | Promise<void>;
 		onCancel?: () => void;
+		defaultCategoryId?: string;
 	} = $props();
 
 	let amountText = $state(
 		untrack(() => (initial?.amount != null ? (initial.amount / 100).toFixed(2) : ''))
 	);
 	let currency = $state(untrack(() => initial?.currency || defaultCurrency));
-	let categoryId = $state(untrack(() => initial?.category_id || categories[0]?.id || ''));
+	let categoryId = $state(
+		untrack(() => initial?.category_id || pickDefaultCategoryId(categories, defaultCategoryId))
+	);
 	let merchant = $state(untrack(() => initial?.merchant || ''));
 	let description = $state(untrack(() => initial?.description || ''));
 	let dateValue = $state(

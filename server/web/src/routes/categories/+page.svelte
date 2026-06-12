@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
+	import { getDefaultCategoryId, setDefaultCategoryId } from '$lib/default-category';
 	import type { Category } from '$lib/types';
 	import { displayCategoryIcon, formatMoney, nowMillis, parseAmount } from '$lib/util';
 
@@ -14,12 +15,16 @@
 	let budgetText = $state('');
 	let busy = $state(false);
 	let showForm = $state(false);
+	let defaultCategoryId = $state('');
 
 	async function load() {
 		loading = true;
 		try {
 			const data = await apiGet<{ categories: Category[] }>('/api/categories');
 			categories = (data.categories ?? []).filter((c) => !c.deleted_at);
+			const storedDefault = getDefaultCategoryId();
+			defaultCategoryId = categories.some((cat) => cat.id === storedDefault) ? storedDefault : '';
+			if (storedDefault && !defaultCategoryId) setDefaultCategoryId(null);
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -73,10 +78,20 @@
 		await load();
 	}
 
+	function toggleDefault(cat: Category) {
+		const next = defaultCategoryId === cat.id ? '' : cat.id;
+		defaultCategoryId = next;
+		setDefaultCategoryId(next || null);
+	}
+
 	async function remove(id: string) {
 		if (!confirm('Delete this category?')) return;
 		const before = categories;
 		categories = categories.filter((c) => c.id !== id);
+		if (defaultCategoryId === id) {
+			defaultCategoryId = '';
+			setDefaultCategoryId(null);
+		}
 		const result = await apiWrite<void>('DELETE', `/api/categories/${id}`, null, `category:${id}`);
 		if (result.kind === 'error') {
 			categories = before;
@@ -89,11 +104,11 @@
 
 {#if showForm}
 	<!-- Form Modal -->
-	<div class="modal-overlay" onclick={reset}></div>
+	<button type="button" class="modal-overlay" onclick={reset} aria-label="Close modal"></button>
 	<div class="modal">
 		<div class="modal-header">
 			<h3>{editingId ? 'Edit Category' : 'New Category'}</h3>
-			<button type="button" class="modal-close" onclick={reset}>
+			<button type="button" class="modal-close" onclick={reset} aria-label="Close modal">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
 					<line x1="6" y1="6" x2="18" y2="18"/>
@@ -135,18 +150,31 @@
 {:else}
 	<div class="category-list">
 		{#each categories as cat (cat.id)}
-			<button type="button" class="category-row" onclick={() => startEdit(cat)}>
-				<div class="cat-icon">{displayCategoryIcon(cat)}</div>
-				<div class="cat-info">
-					<div class="cat-name">{cat.name}</div>
-					{#if cat.budget != null}
-						<div class="cat-budget">Budget: {formatMoney(cat.budget)}</div>
-					{/if}
-				</div>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round">
-					<polyline points="9 18 15 12 9 6"/>
-				</svg>
-			</button>
+			<div class="category-row" class:is-default={defaultCategoryId === cat.id}>
+				<button type="button" class="category-main" onclick={() => startEdit(cat)}>
+					<div class="cat-icon">{displayCategoryIcon(cat)}</div>
+					<div class="cat-info">
+						<div class="cat-name">{cat.name}</div>
+						{#if defaultCategoryId === cat.id}
+							<div class="cat-default">Default category</div>
+						{:else if cat.budget != null}
+							<div class="cat-budget">Budget: {formatMoney(cat.budget)}</div>
+						{/if}
+					</div>
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round">
+						<polyline points="9 18 15 12 9 6"/>
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="default-btn"
+					class:active={defaultCategoryId === cat.id}
+					onclick={() => toggleDefault(cat)}
+					aria-label={defaultCategoryId === cat.id ? `Unset ${cat.name} as default` : `Set ${cat.name} as default`}
+				>
+					★
+				</button>
+			</div>
 		{/each}
 	</div>
 {/if}
@@ -170,10 +198,28 @@
 	.category-row {
 		display: flex;
 		align-items: center;
+		gap: 8px;
+		border-bottom: 0.5px solid #f2f2f2;
+		min-height: 52px;
+	}
+
+	.category-row.is-default {
+		background: #f8fbff;
+		border-radius: 10px;
+		border-bottom-color: transparent;
+		padding-right: 4px;
+	}
+
+	.category-row:last-child {
+		border-bottom: none;
+	}
+
+	.category-main {
+		display: flex;
+		align-items: center;
 		gap: 12px;
 		padding: 12px 4px;
 		border: none;
-		border-bottom: 0.5px solid #f2f2f2;
 		background: none;
 		cursor: pointer;
 		text-align: left;
@@ -183,13 +229,9 @@
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.category-row:active {
+	.category-main:active {
 		background: #f8f8f8;
 		border-radius: 10px;
-	}
-
-	.category-row:last-child {
-		border-bottom: none;
 	}
 
 	.cat-icon {
@@ -207,10 +249,36 @@
 		font-weight: 600;
 	}
 
-	.cat-budget {
+	.cat-budget,
+	.cat-default {
 		font-size: 13px;
 		color: #888;
 		margin-top: 2px;
+	}
+
+	.cat-default {
+		color: #007AFF;
+		font-weight: 600;
+	}
+
+	.default-btn {
+		width: 36px;
+		height: 36px;
+		border: 1.5px solid #e8e8e8;
+		border-radius: 50%;
+		background: white;
+		color: #c7c7cc;
+		font-size: 18px;
+		line-height: 1;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+		flex-shrink: 0;
+	}
+
+	.default-btn.active {
+		border-color: #bfdbfe;
+		background: #eff6ff;
+		color: #007AFF;
 	}
 
 	/* Empty State */
@@ -245,6 +313,8 @@
 	.modal-overlay {
 		position: fixed;
 		inset: 0;
+		border: none;
+		padding: 0;
 		background: rgba(0, 0, 0, 0.3);
 		z-index: 50;
 	}

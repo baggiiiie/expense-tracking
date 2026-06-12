@@ -14,6 +14,7 @@
 	let prefs = $state<Preferences | null>(null);
 	let error = $state('');
 	let ready = $state(false);
+	let deleting = $state(false);
 
 	onMount(async () => {
 		try {
@@ -48,6 +49,19 @@
 		}
 		await goto('/');
 	}
+
+	async function removeExpense() {
+		if (!confirm('Delete this expense?')) return;
+		deleting = true;
+		error = '';
+		const result = await apiWrite<void>('DELETE', `/api/expenses/${id}`, null, `expense:${id}`);
+		deleting = false;
+		if (result.kind === 'error') {
+			error = result.error.message;
+			return;
+		}
+		await goto('/');
+	}
 </script>
 
 <div class="edit-screen">
@@ -59,7 +73,9 @@
 			Back
 		</a>
 		<span class="top-title">Edit Expense</span>
-		<div class="top-spacer"></div>
+		<button type="button" class="delete-top-btn" onclick={removeExpense} disabled={deleting}>
+			{deleting ? 'Deleting…' : 'Delete'}
+		</button>
 	</div>
 
 	{#if !ready}
@@ -82,6 +98,9 @@
 			onSubmit={submit}
 			onCancel={() => goto('/')}
 		/>
+		<button type="button" class="danger-btn" onclick={removeExpense} disabled={deleting}>
+			{deleting ? 'Deleting…' : 'Delete Expense'}
+		</button>
 	{/if}
 </div>
 
@@ -112,8 +131,18 @@
 		font-weight: 600;
 	}
 
-	.top-spacer {
-		width: 60px;
+	.delete-top-btn {
+		border: none;
+		background: none;
+		color: #dc2626;
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.delete-top-btn:disabled {
+		opacity: 0.5;
 	}
 
 	.empty-state {
@@ -146,5 +175,22 @@
 		font-size: 14px;
 		font-weight: 500;
 		margin-bottom: 16px;
+	}
+
+	.danger-btn {
+		width: 100%;
+		margin-top: 18px;
+		padding: 14px;
+		border: 1.5px solid #fecaca;
+		border-radius: 12px;
+		background: white;
+		color: #dc2626;
+		font-size: 16px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.danger-btn:disabled {
+		opacity: 0.5;
 	}
 </style>

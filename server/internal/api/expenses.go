@@ -71,7 +71,10 @@ func createExpense(expenses ExpenseService) http.HandlerFunc {
 // Query parameters:
 //   - before: exclusive upper bound on expense date (unix seconds). Used as
 //     the cursor when scrolling back through history. Omit on the first
-//     page; the server then defaults to "newer than 30 days ago".
+//     page; the server then defaults to "newer than 30 days ago" unless since
+//     is supplied.
+//   - since: inclusive lower bound on expense date (unix seconds). Used by the
+//     PWA's this-week / this-month / custom range summary.
 //   - limit: page size. Defaults to expenseDefaultLimit, capped at
 //     expenseMaxLimit.
 //
@@ -85,25 +88,41 @@ func listExpenses(expenses ExpenseService) http.HandlerFunc {
 		now := time.Now()
 
 		var (
-			before   int64
-			since    int64
-			explicit = q.Has("before")
+			before         int64
+			since          int64
+			explicitBefore = q.Has("before")
+			explicitSince  = q.Has("since")
 		)
-		if explicit {
+		if explicitBefore {
 			parsed, err := strconv.ParseInt(q.Get("before"), 10, 64)
 			if err != nil || parsed <= 0 {
 				writeError(w, r, http.StatusBadRequest, "invalid 'before' parameter")
 				return
 			}
 			before = parsed
-			// When a cursor is supplied the caller is explicitly walking
-			// older history; do not also apply the 7-day floor.
-			since = 0
 		} else {
 			// Half-open upper bound so a row recorded at exactly `now` is
 			// included on the first page.
 			before = now.Unix() + 1
+		}
+
+		if explicitSince {
+			parsed, err := strconv.ParseInt(q.Get("since"), 10, 64)
+			if err != nil || parsed < 0 {
+				writeError(w, r, http.StatusBadRequest, "invalid 'since' parameter")
+				return
+			}
+			since = parsed
+		} else if explicitBefore {
+			// When a cursor is supplied the caller is explicitly walking
+			// older history; do not also apply the default-window floor.
+			since = 0
+		} else {
 			since = now.Add(-expenseDefaultWindow).Unix()
+		}
+		if before <= since {
+			writeError(w, r, http.StatusBadRequest, "'before' must be greater than 'since'")
+			return
 		}
 
 		limit := expenseDefaultLimit
@@ -119,11 +138,17 @@ func listExpenses(expenses ExpenseService) http.HandlerFunc {
 			limit = parsed
 		}
 
-		rows, err := expenses.ListWindow(r.Context(), service.ListWindowOptions{
+		opts := service.ListWindowOptions{
 			Before: before,
 			Since:  since,
 			Limit:  limit,
-		})
+		}
+		rows, err := expenses.ListWindow(r.Context(), opts)
+		if err != nil {
+			writeError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total, err := expenses.SumWindow(r.Context(), opts)
 		if err != nil {
 			writeError(w, r, http.StatusInternalServerError, err.Error())
 			return
@@ -132,6 +157,7 @@ func listExpenses(expenses ExpenseService) http.HandlerFunc {
 		resp := map[string]interface{}{
 			"expenses": rows,
 			"count":    len(rows),
+			"total":    total,
 		}
 		// Always advertise a cursor when the page has rows. A short first
 		// page can still have older history beyond the default 30-day floor;

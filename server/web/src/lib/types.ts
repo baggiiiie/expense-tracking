@@ -72,5 +72,6 @@ export type Preferences = {
 export type ExpenseListResponse = {
 	expenses: Expense[];
 	count: number;
+	total?: number;
 	next_before?: number;
 };

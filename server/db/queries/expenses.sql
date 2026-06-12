@@ -50,3 +50,10 @@ FROM expenses e
 LEFT JOIN categories c ON e.category_id = c.id
 WHERE e.deleted_at IS NULL AND e.date >= ? AND e.date < ?
 GROUP BY e.category_id;
+
+-- name: SumExpensesByDateWindow :one
+SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS total
+FROM expenses
+WHERE deleted_at IS NULL
+  AND date >= sqlc.arg(since)
+  AND date < sqlc.arg(before);
