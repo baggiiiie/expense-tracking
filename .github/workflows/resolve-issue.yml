@@ -27,18 +27,19 @@ jobs:
       contents: write  # commit and push the fix to the default branch
       issues: write    # comment and close
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
       - run: npm ci
       - name: Resolve issue
         env:
