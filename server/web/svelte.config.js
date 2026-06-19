@@ -1,4 +1,13 @@
 import adapter from '@sveltejs/adapter-static';
+import { execSync } from 'node:child_process';
+
+function gitHash() {
+	try {
+		return execSync('git rev-parse --short HEAD').toString().trim();
+	} catch {
+		return 'unknown';
+	}
+}
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -18,6 +27,9 @@ const config = {
 		// src/lib/sw-client.ts.
 		serviceWorker: {
 			register: false
+		},
+		version: {
+			name: gitHash()
 		}
 	}
 };

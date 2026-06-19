@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { version } from '$app/environment';
 
 	let open = $state(false);
 	let body = $state('');
@@ -68,6 +69,7 @@
 		try {
 			const payload = {
 				route,
+				version,
 				body: body.trim(),
 				images: images.map((img) => ({ data: img.data, contentType: img.contentType }))
 			};

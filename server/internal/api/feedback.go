@@ -19,9 +19,10 @@ type feedbackImage struct {
 }
 
 type feedbackRequest struct {
-	Route  string          `json:"route"`
-	Body   string          `json:"body"`
-	Images []feedbackImage `json:"images"`
+	Route   string          `json:"route"`
+	Version string          `json:"version"`
+	Body    string          `json:"body"`
+	Images  []feedbackImage `json:"images"`
 }
 
 const (
@@ -65,6 +66,9 @@ func submitFeedback() http.HandlerFunc {
 		var body strings.Builder
 		body.WriteString("**App:** Svelte web app\n\n")
 		body.WriteString(fmt.Sprintf("**Route:** `%s`\n\n", req.Route))
+		if v := strings.TrimSpace(req.Version); v != "" {
+			body.WriteString(fmt.Sprintf("**Build:** `%s`\n\n", v))
+		}
 		body.WriteString(fmt.Sprintf("**Submitted:** %s\n\n", time.Now().UTC().Format(time.RFC3339)))
 		body.WriteString("---\n\n")
 		body.WriteString(req.Body)
