@@ -174,8 +174,14 @@
 	<div class="section-card">
 		<div class="about-row">
 			<span>Version</span>
-			<span class="about-value">dev</span>
+			<span class="about-value">{__COMMIT_HASH__}</span>
 		</div>
+		{#if __COMMIT_MESSAGE__}
+			<div class="about-row">
+				<span>Commit</span>
+				<span class="about-value">{__COMMIT_MESSAGE__}</span>
+			</div>
+		{/if}
 	</div>
 </div>
 
