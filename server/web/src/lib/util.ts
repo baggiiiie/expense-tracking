@@ -31,10 +31,12 @@ export function formatMoney(cents: number | null | undefined, currency = 'USD'):
 	}
 }
 
-export function parseAmount(input: string): number | null {
-	const trimmed = input.trim();
-	if (!trimmed) return null;
-	const value = Number(trimmed);
+export function parseAmount(input: string | number): number | null {
+	// `<input type="number">` bindings hand us a number (or '' when blank),
+	// while text inputs hand us a string. Accept both so callers don't crash
+	// calling string methods on a number.
+	const value = typeof input === 'number' ? input : Number(input.trim());
+	if (typeof input === 'string' && input.trim() === '') return null;
 	if (!Number.isFinite(value)) return null;
 	return Math.round(value * 100);
 }
