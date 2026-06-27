@@ -26,6 +26,7 @@ jobs:
     permissions:
       contents: write  # commit and push the fix to the default branch
       issues: write    # comment and close
+      actions: write   # dispatch the server image workflow after bot commits
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,3 +53,13 @@ jobs:
           DRY="${{ github.event_name == 'workflow_dispatch' && inputs.dryRun || 'false' }}"
           npx flue run resolve-issue --target node \
             --payload "{\"issueNumber\": ${ISSUE}, \"dryRun\": ${DRY}}"
+
+      - name: Dispatch server image build
+        if: ${{ success() && !(github.event_name == 'workflow_dispatch' && inputs.dryRun) }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch origin master
+          HEAD_SHA="$(git rev-parse origin/master)"
+          echo "Dispatching Server Image for master at ${HEAD_SHA}"
+          gh workflow run server-image.yml --ref master
