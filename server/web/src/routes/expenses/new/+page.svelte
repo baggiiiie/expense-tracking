@@ -4,7 +4,15 @@
 	import { apiGet, apiWrite, ApiError } from '$lib/api';
 	import { pickDefaultCategoryId } from '$lib/default-category';
 	import type { Category, Expense, Preferences } from '$lib/types';
-	import { displayCategoryIcon, newId, nowMillis } from '$lib/util';
+	import {
+		dateInputValue,
+		displayCategoryIcon,
+		formatDate,
+		newId,
+		nowMillis,
+		nowSeconds,
+		unixFromDateInput
+	} from '$lib/util';
 
 	let categories = $state<Category[]>([]);
 	let prefs = $state<Preferences | null>(null);
@@ -17,6 +25,7 @@
 	let selectedCategoryId = $state('');
 	let showCategoryPicker = $state(false);
 	let merchantFocused = $state(false);
+	let dateValue = $state(dateInputValue(nowSeconds()));
 
 	const amountDisplay = $derived(() => {
 		if (!amountCents) return '0.00';
@@ -76,7 +85,7 @@
 			category_id: selectedCategoryId,
 			merchant: merchant.trim(),
 			description: '',
-			date: Math.floor(Date.now() / 1000),
+			date: unixFromDateInput(dateValue),
 			client_updated_at: nowMillis()
 		};
 
@@ -146,6 +155,11 @@
 					<span>Category</span>
 				{/if}
 			</button>
+			<label class="control-pill date-pill">
+				<span>📅</span>
+				<span>{formatDate(unixFromDateInput(dateValue))}</span>
+				<input type="date" bind:value={dateValue} aria-label="Date" />
+			</label>
 		</div>
 	{/if}
 
@@ -344,6 +358,25 @@
 		border-color: #007AFF;
 		background: #007AFF;
 		color: white;
+	}
+
+	.date-pill {
+		position: relative;
+		overflow: hidden;
+	}
+
+	.date-pill input[type='date'] {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		border: none;
+		padding: 0;
+		margin: 0;
+		cursor: pointer;
+		-webkit-appearance: none;
+		appearance: none;
 	}
 
 	/* Keypad — takes remaining space */
