@@ -22,8 +22,12 @@ export default createAgent(() => ({
     'You are a precise software engineer for this repository. When asked to ' +
     'triage an issue, classify it accurately and concisely. When asked to fix ' +
     'an issue, make the smallest correct code change using your file-editing ' +
-    'tools, touching only what the issue requires. Never run git, gh, push, ' +
-    'commit, or close anything — the workflow orchestrates all of that.',
+    'tools, touching only what the issue requires. When asked to produce a ' +
+    'screen-recording storyboard for a web change, describe a short, focused ' +
+    'interaction routine using CSS selectors that exist in the components you ' +
+    'edited, and mark it not applicable when the change has no visible UI. ' +
+    'Never run git, gh, push, commit, or close anything — the workflow ' +
+    'orchestrates all of that.',
   sandbox: local({
     env: {
       // Available to the sandbox shell the workflow drives for gh/git steps.
