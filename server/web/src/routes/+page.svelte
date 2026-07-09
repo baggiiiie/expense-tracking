@@ -269,13 +269,14 @@
 	/* Monthly Total Header — compact for mobile */
 	.monthly-header {
 		text-align: center;
-		padding: 78px 0 16px;
+		padding: 56px 0 18px;
 	}
 
 	.monthly-label {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		flex-wrap: wrap;
 		gap: 8px;
 		font-size: 24px;
 		font-weight: 700;
@@ -312,6 +313,8 @@
 		background: white;
 		color: #1a1a1a;
 		cursor: pointer;
+		max-width: 100%;
+		min-height: 38px;
 	}
 
 	.custom-range {
@@ -323,6 +326,7 @@
 		margin: 14px auto 0;
 		color: #777;
 		font-size: 13px;
+		max-width: 100%;
 	}
 
 	.custom-range input,
@@ -333,6 +337,13 @@
 		background: white;
 		font-size: 13px;
 		font-weight: 600;
+		min-height: 38px;
+	}
+
+	.custom-range input {
+		flex: 1 1 118px;
+		min-width: 0;
+		max-width: 150px;
 	}
 
 	.custom-range button {
@@ -340,6 +351,7 @@
 		background: #007AFF;
 		color: white;
 		cursor: pointer;
+		flex: 0 0 auto;
 	}
 
 	.monthly-amount {
@@ -357,14 +369,18 @@
 	}
 
 	.monthly-amount .amount {
-		font-size: 56px;
+		font-size: 52px;
 		font-weight: 400;
 		letter-spacing: 0;
 	}
 
-	@media (min-width: 640px) {
+	@media (min-height: 740px) {
 		.monthly-header {
-			padding-top: 86px;
+			padding-top: 78px;
+		}
+
+		.monthly-amount .amount {
+			font-size: 56px;
 		}
 	}
 
@@ -374,7 +390,7 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 152px 16px 60px;
+		padding: 96px 12px 52px;
 		text-align: center;
 	}
 
@@ -396,6 +412,12 @@
 		margin: 8px 0 0;
 		font-size: 18px;
 		color: #8e8e93;
+	}
+
+	@media (min-height: 740px) {
+		.empty-state {
+			padding-top: 152px;
+		}
 	}
 
 	.retry-btn {

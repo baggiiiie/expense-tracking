@@ -211,6 +211,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 12px;
 		border: none;
 		background: none;
 		cursor: pointer;
@@ -224,6 +225,12 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.row-left > div {
+		min-width: 0;
 	}
 
 	.card-badge {
@@ -233,17 +240,28 @@
 	.row-merchant {
 		font-size: 16px;
 		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-meta {
 		font-size: 13px;
 		color: #888;
 		margin-top: 2px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-amount {
 		font-size: 17px;
 		font-weight: 600;
+		flex-shrink: 0;
+		max-width: 42%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-actions {
@@ -253,6 +271,7 @@
 
 	.action-add {
 		flex: 1;
+		min-height: 44px;
 		padding: 8px;
 		border: none;
 		border-radius: 8px;
@@ -265,7 +284,7 @@
 
 	.action-dismiss {
 		width: 36px;
-		height: 36px;
+		height: 44px;
 		border: 1.5px solid #fecaca;
 		border-radius: 8px;
 		background: white;
@@ -325,6 +344,7 @@
 
 	.dismiss-btn {
 		margin-top: 8px;
+		min-height: 48px;
 		padding: 12px;
 		border: 1.5px solid #fecaca;
 		border-radius: 12px;

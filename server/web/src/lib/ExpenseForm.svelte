@@ -142,8 +142,14 @@
 
 	.form-grid {
 		display: grid;
-		grid-template-columns: 1fr 100px;
+		grid-template-columns: 1fr;
 		gap: 10px;
+	}
+
+	@media (min-width: 360px) {
+		.form-grid {
+			grid-template-columns: 1fr 100px;
+		}
 	}
 
 	.field {
@@ -160,6 +166,8 @@
 
 	input,
 	select {
+		width: 100%;
+		min-height: 48px;
 		padding: 12px 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 12px;
@@ -181,12 +189,20 @@
 
 	.actions {
 		display: flex;
+		flex-direction: column;
 		gap: 10px;
 		margin-top: 8px;
 	}
 
+	@media (min-width: 360px) {
+		.actions {
+			flex-direction: row;
+		}
+	}
+
 	.btn-submit {
 		flex: 1;
+		min-height: 48px;
 		padding: 14px;
 		border: none;
 		border-radius: 12px;
@@ -203,6 +219,7 @@
 
 	.btn-cancel {
 		flex: 1;
+		min-height: 48px;
 		padding: 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 12px;

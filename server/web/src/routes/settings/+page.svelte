@@ -337,7 +337,7 @@
 
 	.hint-banner {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 8px;
 		padding: 12px 14px;
 		background: #fefce8;
@@ -385,10 +385,16 @@
 		gap: 8px;
 	}
 
+	.error-actions .btn-small {
+		flex: 1;
+		min-height: 40px;
+	}
+
 	.about-row {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 12px;
 		min-height: 48px;
 		border-bottom: 0.5px solid #d1d1d6;
 	}
@@ -399,5 +405,11 @@
 
 	.about-value {
 		color: #888;
+		min-width: 0;
+		max-width: 62%;
+		text-align: right;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

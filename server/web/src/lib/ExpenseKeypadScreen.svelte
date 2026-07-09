@@ -255,13 +255,15 @@
 	.expense-screen {
 		position: fixed;
 		inset: 0;
+		height: 100dvh;
 		background: white;
 		display: flex;
 		flex-direction: column;
 		z-index: 80;
-		padding: 14px 18px;
-		padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
-		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+		overflow: hidden;
+		padding: 12px 14px;
+		padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
 	}
 
 	.top-bar {
@@ -269,6 +271,7 @@
 		align-items: center;
 		justify-content: space-between;
 		flex-shrink: 0;
+		min-height: 40px;
 	}
 
 	.close-btn,
@@ -276,8 +279,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 32px;
+		width: 36px;
+		height: 36px;
 		border: none;
 		border-radius: 50%;
 		background: #f5f5f5;
@@ -301,7 +304,7 @@
 	}
 
 	.top-spacer {
-		width: 32px;
+		width: 36px;
 	}
 
 	.amount-section {
@@ -310,9 +313,9 @@
 		align-items: flex-end;
 		justify-content: center;
 		gap: 3px;
-		min-height: 120px;
-		max-height: 190px;
-		padding-bottom: 22px;
+		min-height: 86px;
+		max-height: 140px;
+		padding-bottom: 14px;
 	}
 
 	.dollar-sign {
@@ -330,6 +333,7 @@
 	@media (min-height: 700px) {
 		.amount-section {
 			max-height: 180px;
+			padding-bottom: 22px;
 		}
 
 		.dollar-sign {
@@ -345,7 +349,7 @@
 		display: flex;
 		justify-content: center;
 		flex-shrink: 0;
-		margin-bottom: 96px;
+		margin-bottom: 42px;
 	}
 
 	.merchant-field {
@@ -353,7 +357,8 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
-		max-width: 240px;
+		max-width: 260px;
+		min-height: 42px;
 		padding: 9px 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 999px;
@@ -393,8 +398,9 @@
 
 	.controls-row {
 		display: flex;
+		align-items: stretch;
 		justify-content: center;
-		gap: 8px;
+		gap: 6px;
 		flex-shrink: 0;
 		margin-bottom: 10px;
 	}
@@ -403,8 +409,8 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		min-height: 42px;
-		padding: 7px 14px;
+		min-height: 44px;
+		padding: 7px 10px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 999px;
 		background: white;
@@ -442,7 +448,7 @@
 
 	.category-pill {
 		flex: 0 0 auto;
-		max-width: 134px;
+		max-width: 124px;
 	}
 
 	.date-pill input[type='datetime-local'] {
@@ -460,8 +466,8 @@
 	}
 
 	.input-panel {
-		flex: 2 1 0;
-		min-height: 200px;
+		flex: 1.8 1 232px;
+		min-height: 232px;
 		display: flex;
 		flex-direction: column;
 	}
@@ -469,6 +475,7 @@
 	.keypad {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
+		grid-template-rows: repeat(4, minmax(52px, 1fr));
 		gap: 8px;
 		flex: 1;
 	}
@@ -509,6 +516,10 @@
 	}
 
 	@media (min-height: 700px) {
+		.merchant-wrap {
+			margin-bottom: 72px;
+		}
+
 		.keypad {
 			gap: 10px;
 		}
@@ -516,6 +527,27 @@
 		.key {
 			border-radius: 14px;
 			font-size: 28px;
+		}
+	}
+
+	@media (min-height: 780px) {
+		.merchant-wrap {
+			margin-bottom: 96px;
+		}
+	}
+
+	@media (max-height: 620px) {
+		.amount-section {
+			max-height: 112px;
+		}
+
+		.merchant-wrap {
+			margin-bottom: 24px;
+		}
+
+		.input-panel {
+			flex-basis: 212px;
+			min-height: 212px;
 		}
 	}
 
@@ -547,7 +579,7 @@
 
 	.category-grid {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
 		gap: 8px;
 		flex: 1;
 		overflow-y: auto;
@@ -558,6 +590,7 @@
 		display: flex;
 		align-items: center;
 		gap: 7px;
+		min-height: 44px;
 		padding: 10px 12px;
 		border: none;
 		border-radius: 10px;

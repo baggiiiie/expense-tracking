@@ -199,7 +199,7 @@
 		align-items: center;
 		gap: 8px;
 		border-bottom: 0.5px solid #f2f2f2;
-		min-height: 52px;
+		min-height: 56px;
 	}
 
 	.category-row.is-default {
@@ -238,11 +238,15 @@
 
 	.cat-info {
 		flex: 1;
+		min-width: 0;
 	}
 
 	.cat-name {
 		font-size: 17px;
 		font-weight: 400;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.cat-budget,
@@ -258,8 +262,8 @@
 	}
 
 	.default-btn {
-		width: 40px;
-		height: 40px;
+		width: 44px;
+		height: 44px;
 		border: none;
 		border-radius: 50%;
 		background: transparent;
@@ -318,11 +322,14 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
+		max-height: 86dvh;
+		overflow-y: auto;
 		background: white;
 		border-radius: 20px 20px 0 0;
 		padding: 20px;
 		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
 		z-index: 51;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.modal-header {
@@ -357,16 +364,18 @@
 	}
 
 	.form-row {
-		display: flex;
+		display: grid;
+		grid-template-columns: 56px minmax(0, 1fr);
 		gap: 10px;
 	}
 
 	.icon-field {
-		flex: 0 0 56px;
+		min-width: 0;
 	}
 
 	.icon-input {
 		width: 100%;
+		min-height: 48px;
 		text-align: center;
 		font-size: 24px;
 		padding: 10px;
@@ -376,11 +385,12 @@
 	}
 
 	.name-field {
-		flex: 1;
+		min-width: 0;
 	}
 
 	.name-field input {
 		width: 100%;
+		min-height: 48px;
 		padding: 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 12px;
@@ -402,6 +412,7 @@
 	}
 
 	.budget-field input {
+		min-height: 48px;
 		padding: 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 12px;
@@ -410,6 +421,7 @@
 	}
 
 	.submit-btn {
+		min-height: 48px;
 		padding: 14px;
 		border: none;
 		border-radius: 12px;

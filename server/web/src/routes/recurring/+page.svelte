@@ -331,17 +331,20 @@
 	.row-right {
 		text-align: right;
 		flex-shrink: 0;
+		max-width: 42%;
 	}
 
 	.row-amount {
 		font-size: 17px;
 		font-weight: 600;
+		white-space: nowrap;
 	}
 
 	.row-next {
 		font-size: 13px;
 		color: #888;
 		margin-top: 2px;
+		white-space: nowrap;
 	}
 
 	/* Empty State */
@@ -429,8 +432,14 @@
 
 	.form-grid {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 1fr;
 		gap: 10px;
+	}
+
+	@media (min-width: 360px) {
+		.form-grid {
+			grid-template-columns: 1fr 1fr;
+		}
 	}
 
 	label {
@@ -446,6 +455,8 @@
 	}
 
 	input, select {
+		width: 100%;
+		min-height: 48px;
 		padding: 12px 14px;
 		border: 1.5px solid #e0e0e0;
 		border-radius: 12px;
@@ -454,6 +465,7 @@
 	}
 
 	.submit-btn {
+		min-height: 48px;
 		padding: 14px;
 		border: none;
 		border-radius: 12px;
