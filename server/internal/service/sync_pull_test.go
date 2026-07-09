@@ -46,21 +46,7 @@ func TestPullWithDueRecurringDoesNotMaterialize(t *testing.T) {
 	spy := &countingTxManager{q: s.queries}
 	s.tx = spy
 
-	seedCategoryForFK(t, s.queries, "cat1")
-	if err := s.queries.CreateRecurringExpense(context.Background(), dbsqlc.CreateRecurringExpenseParams{
-		ID:          "r1",
-		Amount:      5000,
-		Currency:    "USD",
-		CategoryID:  "cat1",
-		Description: "rent",
-		Frequency:   "monthly",
-		StartDate:   1,
-		NextRunDate: 1,
-		CreatedAt:   1,
-		UpdatedAt:   1,
-	}); err != nil {
-		t.Fatalf("seed recurring expense: %v", err)
-	}
+	seedDueRecurringExpense(t, s.queries)
 
 	if _, err := s.Pull(context.Background(), 0); err != nil {
 		t.Fatalf("pull: %v", err)
@@ -95,21 +81,7 @@ func TestPullWithDueRecurringDoesNotMaterialize(t *testing.T) {
 func TestEmptyPushMaterializesDueRecurring(t *testing.T) {
 	s := newTestSyncService(t)
 
-	seedCategoryForFK(t, s.queries, "cat1")
-	if err := s.queries.CreateRecurringExpense(context.Background(), dbsqlc.CreateRecurringExpenseParams{
-		ID:          "r1",
-		Amount:      5000,
-		Currency:    "USD",
-		CategoryID:  "cat1",
-		Description: "rent",
-		Frequency:   "monthly",
-		StartDate:   1,
-		NextRunDate: 1,
-		CreatedAt:   1,
-		UpdatedAt:   1,
-	}); err != nil {
-		t.Fatalf("seed recurring expense: %v", err)
-	}
+	seedDueRecurringExpense(t, s.queries)
 
 	if _, err := s.Push(context.Background(), PushRequest{}); err != nil {
 		t.Fatalf("empty push: %v", err)
@@ -136,19 +108,7 @@ func TestPushWalletSuggestionAcceptsAndPullsDelta(t *testing.T) {
 	s := newTestSyncService(t)
 	ctx := context.Background()
 
-	if err := s.queries.CreateWalletSuggestion(ctx, dbsqlc.CreateWalletSuggestionParams{
-		ID:              "suggestion-1",
-		Amount:          sql.NullInt64{Int64: 1299, Valid: true},
-		Currency:        "USD",
-		Merchant:        "Coffee",
-		CapturedAt:      10,
-		Source:          "shortcut",
-		CreatedAt:       10,
-		UpdatedAt:       10,
-		ClientUpdatedAt: 10,
-	}); err != nil {
-		t.Fatalf("seed wallet suggestion: %v", err)
-	}
+	seedWalletSuggestionForSync(t, s.queries)
 
 	linkedExpenseID := "expense-1"
 	seedCategoryForFK(t, s.queries, "cat1")
@@ -225,19 +185,7 @@ func TestPushWalletSuggestionRejectsInvalidLifecycleState(t *testing.T) {
 			s := newTestSyncService(t)
 			ctx := context.Background()
 
-			if err := s.queries.CreateWalletSuggestion(ctx, dbsqlc.CreateWalletSuggestionParams{
-				ID:              "suggestion-1",
-				Amount:          sql.NullInt64{Int64: 1299, Valid: true},
-				Currency:        "USD",
-				Merchant:        "Coffee",
-				CapturedAt:      10,
-				Source:          "shortcut",
-				CreatedAt:       10,
-				UpdatedAt:       10,
-				ClientUpdatedAt: 10,
-			}); err != nil {
-				t.Fatalf("seed wallet suggestion: %v", err)
-			}
+			seedWalletSuggestionForSync(t, s.queries)
 
 			_, err := s.Push(ctx, PushRequest{
 				WalletSuggestions: []PushWalletSuggestion{
@@ -258,4 +206,40 @@ func TestPushWalletSuggestionRejectsInvalidLifecycleState(t *testing.T) {
 
 func ptrString(v string) *string {
 	return &v
+}
+
+func seedDueRecurringExpense(t *testing.T, q *dbsqlc.Queries) {
+	t.Helper()
+	seedCategoryForFK(t, q, "cat1")
+	if err := q.CreateRecurringExpense(context.Background(), dbsqlc.CreateRecurringExpenseParams{
+		ID:          "r1",
+		Amount:      5000,
+		Currency:    "USD",
+		CategoryID:  "cat1",
+		Description: "rent",
+		Frequency:   "monthly",
+		StartDate:   1,
+		NextRunDate: 1,
+		CreatedAt:   1,
+		UpdatedAt:   1,
+	}); err != nil {
+		t.Fatalf("seed recurring expense: %v", err)
+	}
+}
+
+func seedWalletSuggestionForSync(t *testing.T, q *dbsqlc.Queries) {
+	t.Helper()
+	if err := q.CreateWalletSuggestion(context.Background(), dbsqlc.CreateWalletSuggestionParams{
+		ID:              "suggestion-1",
+		Amount:          sql.NullInt64{Int64: 1299, Valid: true},
+		Currency:        "USD",
+		Merchant:        "Coffee",
+		CapturedAt:      10,
+		Source:          "shortcut",
+		CreatedAt:       10,
+		UpdatedAt:       10,
+		ClientUpdatedAt: 10,
+	}); err != nil {
+		t.Fatalf("seed wallet suggestion: %v", err)
+	}
 }

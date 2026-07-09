@@ -1,0 +1,15 @@
+{
+  "minTokens": 100,
+  "ignore": [
+    "**/node_modules/**",
+    "**/.svelte-kit/**",
+    "dist/**",
+    "ios/.build/**",
+    "server/bin/**",
+    "**/package-lock.json",
+    "docs/**",
+    "server/**/*.md",
+    "server/db/migrations/**",
+    "server/internal/repository/sqlc/**"
+  ]
+}

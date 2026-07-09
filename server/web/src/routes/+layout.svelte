@@ -117,6 +117,134 @@
 		color: inherit;
 	}
 
+	:global(.shared-empty-state) {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 140px 16px 60px;
+		text-align: center;
+	}
+
+	:global(.shared-empty-icon) {
+		font-size: 48px;
+		margin-bottom: 18px;
+		color: #8e8e93;
+	}
+
+	:global(.shared-empty-title) {
+		margin: 0;
+		font-size: 24px;
+		font-weight: 700;
+	}
+
+	:global(.shared-empty-desc) {
+		margin: 6px 0 0;
+		font-size: 16px;
+		color: #8e8e93;
+	}
+
+	:global(.shared-modal-overlay) {
+		position: fixed;
+		inset: 0;
+		border: none;
+		padding: 0;
+		background: rgba(0, 0, 0, 0.3);
+		z-index: 50;
+	}
+
+	:global(.shared-modal) {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		max-height: var(--modal-max-height, 86dvh);
+		overflow-y: auto;
+		background: white;
+		border-radius: 20px 20px 0 0;
+		padding: 20px;
+		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+		z-index: 51;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	:global(.shared-modal-header) {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
+	:global(.shared-modal-header h3) {
+		margin: 0;
+		font-size: 18px;
+		font-weight: 700;
+	}
+
+	:global(.shared-modal-close) {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: none;
+		background: #f5f5f5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
+
+	:global(.shared-modal form) {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	:global(.shared-submit-btn) {
+		min-height: 48px;
+		padding: 14px;
+		border: none;
+		border-radius: 12px;
+		background: #1a1a1a;
+		color: white;
+		font-size: 16px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	:global(.shared-submit-btn:disabled) {
+		opacity: 0.5;
+	}
+
+	:global(.shared-error) {
+		margin: 0;
+		color: #dc2626;
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	:global(.shared-fab) {
+		position: fixed;
+		top: calc(env(safe-area-inset-top, 0px) + 22px);
+		right: 16px;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		background: transparent;
+		color: #007AFF;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: none;
+		border: none;
+		cursor: pointer;
+		z-index: 20;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	:global(.shared-fab:active) {
+		transform: scale(0.9);
+	}
+
 	.shell {
 		min-height: 100dvh;
 		display: flex;

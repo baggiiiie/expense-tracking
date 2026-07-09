@@ -66,22 +66,8 @@ func (s *ExpenseService) CreateWithQueries(ctx context.Context, q *dbsqlc.Querie
 		return nil, fmt.Errorf("amount must be positive")
 	}
 
-	// Resolve category
-	categoryID := input.CategoryID
-	if categoryID == "" && input.Category != "" {
-		resolvedCategoryID, err := resolveActiveCategoryIDByName(ctx, q, input.Category)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, fmt.Errorf("category %q not found. Run 'expense category list' to see available categories", input.Category)
-			}
-			return nil, err
-		}
-		categoryID = resolvedCategoryID
-	}
-	if categoryID == "" {
-		return nil, fmt.Errorf("category is required")
-	}
-	if err := validateActiveCategoryID(ctx, q, categoryID); err != nil {
+	categoryID, err := resolveRequiredActiveCategoryID(ctx, q, input.CategoryID, input.Category)
+	if err != nil {
 		return nil, err
 	}
 

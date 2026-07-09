@@ -72,11 +72,11 @@
 
 {#if showForm}
 	<!-- Form Modal -->
-	<button type="button" class="modal-overlay" onclick={reset} aria-label="Close modal"></button>
-	<div class="modal">
-		<div class="modal-header">
+	<button type="button" class="shared-modal-overlay" onclick={reset} aria-label="Close modal"></button>
+	<div class="shared-modal">
+		<div class="shared-modal-header">
 			<h3>{draft.editingId ? 'Edit Category' : 'New Category'}</h3>
-			<button type="button" class="modal-close" onclick={reset} aria-label="Close modal">
+			<button type="button" class="shared-modal-close" onclick={reset} aria-label="Close modal">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
 					<line x1="6" y1="6" x2="18" y2="18"/>
@@ -96,8 +96,8 @@
 				<span>Monthly budget (optional)</span>
 				<input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" bind:value={draft.budgetText} />
 			</label>
-			{#if error}<p class="error">{error}</p>{/if}
-			<button type="submit" class="submit-btn" disabled={busy}>
+			{#if error}<p class="shared-error">{error}</p>{/if}
+			<button type="submit" class="shared-submit-btn" disabled={busy}>
 				{draft.editingId ? 'Save Changes' : 'Add Category'}
 			</button>
 		</form>
@@ -105,15 +105,15 @@
 {/if}
 
 {#if loading}
-	<div class="empty-state">
-		<div class="empty-icon">⏳</div>
-		<p class="empty-title">Loading…</p>
+	<div class="shared-empty-state">
+		<div class="shared-empty-icon">⏳</div>
+		<p class="shared-empty-title">Loading…</p>
 	</div>
 {:else if categories.length === 0}
-	<div class="empty-state">
-		<div class="empty-icon">🏷️</div>
-		<p class="empty-title">No Categories</p>
-		<p class="empty-desc">Tap + to create your first category</p>
+	<div class="shared-empty-state">
+		<div class="shared-empty-icon">🏷️</div>
+		<p class="shared-empty-title">No Categories</p>
+		<p class="shared-empty-desc">Tap + to create your first category</p>
 	</div>
 {:else}
 	<div class="category-list">
@@ -147,7 +147,7 @@
 	</div>
 {/if}
 
-<button type="button" class="fab" onclick={() => { showForm = true; }} aria-label="Add Category">
+<button type="button" class="shared-fab" onclick={() => { showForm = true; }} aria-label="Add Category">
 	<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 		<line x1="12" y1="5" x2="12" y2="19"/>
 		<line x1="5" y1="12" x2="19" y2="12"/>
@@ -247,90 +247,6 @@
 		color: #ffcc00;
 	}
 
-	/* Empty State */
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 140px 16px 60px;
-		text-align: center;
-	}
-
-	.empty-icon {
-		font-size: 48px;
-		margin-bottom: 18px;
-		color: #8e8e93;
-	}
-
-	.empty-title {
-		margin: 0;
-		font-size: 24px;
-		font-weight: 700;
-	}
-
-	.empty-desc {
-		margin: 6px 0 0;
-		font-size: 16px;
-		color: #8e8e93;
-	}
-
-	/* Modal */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		border: none;
-		padding: 0;
-		background: rgba(0, 0, 0, 0.3);
-		z-index: 50;
-	}
-
-	.modal {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		max-height: 86dvh;
-		overflow-y: auto;
-		background: white;
-		border-radius: 20px 20px 0 0;
-		padding: 20px;
-		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
-		z-index: 51;
-		-webkit-overflow-scrolling: touch;
-	}
-
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 20px;
-	}
-
-	.modal-header h3 {
-		margin: 0;
-		font-size: 18px;
-		font-weight: 700;
-	}
-
-	.modal-close {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		border: none;
-		background: #f5f5f5;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-	}
-
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 14px;
-	}
-
 	.form-row {
 		display: grid;
 		grid-template-columns: 56px minmax(0, 1fr);
@@ -386,51 +302,5 @@
 		border-radius: 12px;
 		font-size: 16px;
 		background: #fafafa;
-	}
-
-	.submit-btn {
-		min-height: 48px;
-		padding: 14px;
-		border: none;
-		border-radius: 12px;
-		background: #1a1a1a;
-		color: white;
-		font-size: 16px;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.submit-btn:disabled {
-		opacity: 0.5;
-	}
-
-	.error {
-		margin: 0;
-		color: #dc2626;
-		font-size: 14px;
-		font-weight: 500;
-	}
-
-	.fab {
-		position: fixed;
-		top: calc(env(safe-area-inset-top, 0px) + 22px);
-		right: 16px;
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		background: transparent;
-		color: #007AFF;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: none;
-		border: none;
-		cursor: pointer;
-		z-index: 20;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.fab:active {
-		transform: scale(0.9);
 	}
 </style>

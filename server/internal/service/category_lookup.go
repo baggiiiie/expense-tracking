@@ -24,6 +24,27 @@ func resolveActiveCategoryIDByName(ctx context.Context, q *dbsqlc.Queries, name 
 	}
 }
 
+func resolveRequiredActiveCategoryID(ctx context.Context, q *dbsqlc.Queries, id string, name string) (string, error) {
+	categoryID := id
+	if categoryID == "" && name != "" {
+		resolvedCategoryID, err := resolveActiveCategoryIDByName(ctx, q, name)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return "", fmt.Errorf("category %q not found. Run 'expense category list' to see available categories", name)
+			}
+			return "", err
+		}
+		categoryID = resolvedCategoryID
+	}
+	if categoryID == "" {
+		return "", fmt.Errorf("category is required")
+	}
+	if err := validateActiveCategoryID(ctx, q, categoryID); err != nil {
+		return "", err
+	}
+	return categoryID, nil
+}
+
 func validateActiveCategoryID(ctx context.Context, q *dbsqlc.Queries, id string) error {
 	_, err := q.GetCategoryByID(ctx, id)
 	if err == sql.ErrNoRows {

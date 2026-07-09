@@ -15,15 +15,10 @@ func newSummaryCmd(reports reportServiceProvider, prefs preferencesServiceProvid
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			month, _ := cmd.Flags().GetString("month")
 
-			reportService := reports()
-			if reportService == nil {
-				return fmt.Errorf("report service is not initialized")
+			reportService, preferences, err := reportCommandDependencies(reports, prefs)
+			if err != nil {
+				return err
 			}
-			prefService := prefs()
-			if prefService == nil {
-				return fmt.Errorf("cli runtime is not initialized")
-			}
-			preferences := prefService.GetPreferences()
 
 			result, err := reportService.Summary(context.Background(), month)
 			if err != nil {

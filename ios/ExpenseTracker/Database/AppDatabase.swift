@@ -37,6 +37,16 @@ struct AppDatabase {
         try seedDefaultCategories()
     }
 
+    private static func addExpenseLikeColumns(to t: TableDefinition) {
+        t.column("id", .text).primaryKey()
+        t.column("client_id", .text).notNull().unique()
+        t.column("amount", .integer).notNull()
+        t.column("currency", .text).notNull()
+        t.column("category_id", .text).notNull().references("categories")
+        t.column("description", .text).notNull().defaults(to: "")
+        t.column("merchant", .text).notNull().defaults(to: "")
+    }
+
     private var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
@@ -53,13 +63,7 @@ struct AppDatabase {
             }
 
             try db.create(table: "expenses") { t in
-                t.column("id", .text).primaryKey()
-                t.column("client_id", .text).notNull().unique()
-                t.column("amount", .integer).notNull()
-                t.column("currency", .text).notNull()
-                t.column("category_id", .text).notNull().references("categories")
-                t.column("description", .text).notNull().defaults(to: "")
-                t.column("merchant", .text).notNull().defaults(to: "")
+                Self.addExpenseLikeColumns(to: t)
                 t.column("date", .integer).notNull()
                 t.column("source", .text).notNull().defaults(to: ExpenseSource.manual.rawValue)
                 t.column("created_at", .integer).notNull()
@@ -127,13 +131,7 @@ struct AppDatabase {
 
         migrator.registerMigration("v6-recurring-expenses") { db in
             try db.create(table: "recurring_expenses") { t in
-                t.column("id", .text).primaryKey()
-                t.column("client_id", .text).notNull().unique()
-                t.column("amount", .integer).notNull()
-                t.column("currency", .text).notNull()
-                t.column("category_id", .text).notNull().references("categories")
-                t.column("description", .text).notNull().defaults(to: "")
-                t.column("merchant", .text).notNull().defaults(to: "")
+                Self.addExpenseLikeColumns(to: t)
                 t.column("frequency", .text).notNull()
                 t.column("day_of_month", .integer)
                 t.column("start_date", .integer).notNull()
