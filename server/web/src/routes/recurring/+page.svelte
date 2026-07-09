@@ -1,17 +1,21 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiGet, apiWrite, ApiError } from '$lib/api';
-	import { pickDefaultCategoryId } from '$lib/default-category';
+	import { ApiError } from '$lib/api';
+	import { categoryIcon } from '$lib/features/categories';
+	import {
+		draftFromRecurring,
+		emptyRecurringDraft,
+		loadRecurringPage,
+		recurringCategoryIcon,
+		recurringCategoryName,
+		saveRecurringExpense,
+		scheduleSummary,
+		type RecurringDraft
+	} from '$lib/features/recurring';
 	import type { Category, Preferences, RecurringExpense } from '$lib/types';
 	import {
-		dateInputValue,
-		displayCategoryIcon,
 		formatDate,
-		formatMoney,
-		nowMillis,
-		nowSeconds,
-		parseAmount,
-		unixFromDateInput
+		formatMoney
 	} from '$lib/util';
 
 	let rows = $state<RecurringExpense[]>([]);
@@ -21,46 +25,19 @@
 	let error = $state('');
 
 	let showForm = $state(false);
-	let editingId = $state<string | null>(null);
-	let amountText = $state('');
-	let currency = $state('USD');
-	let categoryId = $state('');
-	let merchant = $state('');
-	let description = $state('');
-	let frequency = $state<'weekly' | 'monthly' | 'yearly'>('monthly');
-	let dayOfMonthText = $state('');
-	let startDate = $state(dateInputValue(nowSeconds()));
-	let endDate = $state('');
+	let draft = $state<RecurringDraft>(emptyRecurringDraft('USD', ''));
+	let defaultCategoryId = $state('');
 	let busy = $state(false);
-
-	const categoryName = $derived((id: string) => categories.find((c) => c.id === id)?.name ?? '—');
-	const categoryIcon = $derived((id: string) => {
-		const cat = categories.find((c) => c.id === id);
-		return cat ? displayCategoryIcon(cat) : '💸';
-	});
-
-	function scheduleSummary(row: RecurringExpense): string {
-		switch (row.frequency) {
-			case 'weekly': return 'Every week';
-			case 'monthly': return `Every month on day ${row.day_of_month ?? 1}`;
-			case 'yearly': return 'Every year';
-			default: return row.frequency;
-		}
-	}
 
 	async function load() {
 		loading = true;
 		try {
-			const [r, c, p] = await Promise.all([
-				apiGet<{ recurring_expenses: RecurringExpense[] }>('/api/recurring-expenses'),
-				apiGet<{ categories: Category[] }>('/api/categories'),
-				apiGet<Preferences>('/api/preferences')
-			]);
-			rows = (r.recurring_expenses ?? []).filter((x) => !x.deleted_at);
-			categories = (c.categories ?? []).filter((x) => !x.deleted_at);
-			prefs = p;
-			if (!currency || currency === 'USD') currency = p.currency;
-			if (!categoryId) categoryId = pickDefaultCategoryId(categories);
+			const model = await loadRecurringPage();
+			rows = model.rows;
+			categories = model.categories;
+			prefs = model.prefs;
+			defaultCategoryId = model.defaultCategoryId;
+			if (!showForm) draft = emptyRecurringDraft(model.prefs.currency, model.defaultCategoryId);
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -69,87 +46,32 @@
 	}
 
 	function reset() {
-		editingId = null;
 		showForm = false;
-		amountText = '';
-		merchant = '';
-		description = '';
-		frequency = 'monthly';
-		dayOfMonthText = '';
-		startDate = dateInputValue(nowSeconds());
-		endDate = '';
+		draft = emptyRecurringDraft(prefs?.currency ?? 'USD', defaultCategoryId);
 		error = '';
 	}
 
 	function startEdit(row: RecurringExpense) {
-		editingId = row.id;
-		amountText = (row.amount / 100).toFixed(2);
-		currency = row.currency;
-		categoryId = row.category_id;
-		merchant = row.merchant;
-		description = row.description;
-		frequency = (row.frequency as 'weekly' | 'monthly' | 'yearly') || 'monthly';
-		dayOfMonthText = row.day_of_month != null ? String(row.day_of_month) : '';
-		startDate = dateInputValue(row.start_date);
-		endDate = row.end_date != null ? dateInputValue(row.end_date) : '';
+		draft = draftFromRecurring(row);
 		showForm = true;
 	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		error = '';
-		const amount = parseAmount(amountText);
-		if (amount == null || amount <= 0) {
-			error = 'Enter an amount greater than zero.';
-			return;
-		}
-		if (!categoryId) {
-			error = 'Pick a category.';
-			return;
-		}
 		busy = true;
-
-		const dayOfMonth =
-			frequency === 'monthly' && dayOfMonthText.trim() !== ''
-				? Number(dayOfMonthText)
-				: null;
-
-		const body = {
-			amount,
-			currency: currency.toUpperCase(),
-			category_id: categoryId,
-			merchant: merchant.trim(),
-			description: description.trim(),
-			frequency,
-			day_of_month: dayOfMonth,
-			start_date: unixFromDateInput(startDate),
-			end_date: endDate ? unixFromDateInput(endDate) : null,
-			client_updated_at: nowMillis()
-		};
-
-		const url = editingId ? `/api/recurring-expenses/${editingId}` : '/api/recurring-expenses';
-		const method = editingId ? 'PUT' : 'POST';
-		const targetKey = `recurring:${editingId ?? 'new'}:${nowMillis()}`;
-
-		const result = await apiWrite<RecurringExpense>(method, url, body, targetKey);
+		const result = await saveRecurringExpense(draft);
 		busy = false;
+		if (result.kind === 'validation-error') {
+			error = result.message;
+			return;
+		}
 		if (result.kind === 'error') {
 			error = result.error.message;
 			return;
 		}
 		reset();
 		await load();
-	}
-
-	async function remove(id: string) {
-		if (!confirm('Delete this recurring expense?')) return;
-		const before = rows;
-		rows = rows.filter((r) => r.id !== id);
-		const result = await apiWrite<void>('DELETE', `/api/recurring-expenses/${id}`, null, `recurring:${id}`);
-		if (result.kind === 'error') {
-			rows = before;
-			error = result.error.message;
-		}
 	}
 
 	onMount(load);
@@ -159,7 +81,7 @@
 	<button type="button" class="modal-overlay" onclick={reset} aria-label="Close modal"></button>
 	<div class="modal">
 		<div class="modal-header">
-			<h3>{editingId ? 'Edit Recurring' : 'New Recurring'}</h3>
+			<h3>{draft.editingId ? 'Edit Recurring' : 'New Recurring'}</h3>
 			<button type="button" class="modal-close" onclick={reset} aria-label="Close">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
@@ -171,56 +93,56 @@
 			<div class="form-grid">
 				<label>
 					<span>Amount</span>
-					<input type="number" step="0.01" min="0" inputmode="decimal" bind:value={amountText} required />
+					<input type="number" step="0.01" min="0" inputmode="decimal" bind:value={draft.amountText} required />
 				</label>
 				<label>
 					<span>Currency</span>
-					<input type="text" maxlength="3" bind:value={currency} required />
+					<input type="text" maxlength="3" bind:value={draft.currency} required />
 				</label>
 			</div>
 			<label>
 				<span>Category</span>
-				<select bind:value={categoryId} required>
+				<select bind:value={draft.categoryId} required>
 					{#each categories as cat}
-						<option value={cat.id}>{displayCategoryIcon(cat)} {cat.name}</option>
+						<option value={cat.id}>{categoryIcon(cat)} {cat.name}</option>
 					{/each}
 				</select>
 			</label>
 			<label>
 				<span>Merchant</span>
-				<input type="text" bind:value={merchant} />
+				<input type="text" bind:value={draft.merchant} />
 			</label>
 			<label>
 				<span>Note</span>
-				<input type="text" bind:value={description} />
+				<input type="text" bind:value={draft.description} />
 			</label>
 			<label>
 				<span>Frequency</span>
-				<select bind:value={frequency}>
+				<select bind:value={draft.frequency}>
 					<option value="weekly">Weekly</option>
 					<option value="monthly">Monthly</option>
 					<option value="yearly">Yearly</option>
 				</select>
 			</label>
-			{#if frequency === 'monthly'}
+			{#if draft.frequency === 'monthly'}
 				<label>
 					<span>Day of month</span>
-					<input type="number" min="1" max="31" bind:value={dayOfMonthText} placeholder="1" />
+					<input type="number" min="1" max="31" bind:value={draft.dayOfMonthText} placeholder="1" />
 				</label>
 			{/if}
 			<div class="form-grid">
 				<label>
 					<span>Start date</span>
-					<input type="date" bind:value={startDate} required />
+					<input type="date" bind:value={draft.startDate} required />
 				</label>
 				<label>
 					<span>End date</span>
-					<input type="date" bind:value={endDate} />
+					<input type="date" bind:value={draft.endDate} />
 				</label>
 			</div>
 			{#if error}<p class="error">{error}</p>{/if}
 			<button type="submit" class="submit-btn" disabled={busy}>
-				{editingId ? 'Save Changes' : 'Add Recurring'}
+				{draft.editingId ? 'Save Changes' : 'Add Recurring'}
 			</button>
 		</form>
 	</div>
@@ -242,10 +164,10 @@
 		{#each rows as row (row.id)}
 			<button type="button" class="recurring-row" onclick={() => startEdit(row)}>
 				<div class="row-icon-circle">
-					{categoryIcon(row.category_id)}
+					{recurringCategoryIcon(categories, row.category_id)}
 				</div>
 				<div class="row-info">
-					<div class="row-merchant">{row.merchant || row.description || categoryName(row.category_id)}</div>
+					<div class="row-merchant">{row.merchant || row.description || recurringCategoryName(categories, row.category_id)}</div>
 					<div class="row-schedule">{scheduleSummary(row)}</div>
 				</div>
 				<div class="row-right">

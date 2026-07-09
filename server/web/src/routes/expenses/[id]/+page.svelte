@@ -2,17 +2,15 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { apiGet, apiWrite, ApiError } from '$lib/api';
+	import { ApiError } from '$lib/api';
 	import ExpenseKeypadScreen from '$lib/ExpenseKeypadScreen.svelte';
+	import {
+		deleteExpense,
+		loadExistingExpenseContext,
+		updateExpense,
+		type ExpenseFormValue
+	} from '$lib/features/expenses';
 	import type { Category, Expense } from '$lib/types';
-	import { nowMillis } from '$lib/util';
-
-	type ExpenseFormValue = {
-		amount: number;
-		category_id: string;
-		merchant: string;
-		date: number;
-	};
 
 	const id = $derived(page.params.id as string);
 
@@ -25,12 +23,9 @@
 
 	onMount(async () => {
 		try {
-			const [expenseData, categoryData] = await Promise.all([
-				apiGet<Expense>(`/api/expenses/${id}`),
-				apiGet<{ categories: Category[] }>('/api/categories')
-			]);
-			expense = expenseData;
-			categories = (categoryData.categories ?? []).filter((category) => !category.deleted_at);
+			const context = await loadExistingExpenseContext(id);
+			expense = context.expense;
+			categories = context.categories;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 			else if (!(e instanceof ApiError)) error = String(e);
@@ -51,16 +46,7 @@
 
 		busy = true;
 		error = '';
-		const body = {
-			amount: value.amount,
-			currency: expense.currency,
-			category_id: value.category_id,
-			merchant: value.merchant,
-			description: expense.description ?? '',
-			date: value.date,
-			client_updated_at: nowMillis()
-		};
-		const result = await apiWrite<Expense>('PUT', `/api/expenses/${id}`, body, `expense:${id}`);
+		const result = await updateExpense(id, expense, value);
 		busy = false;
 		if (result.kind === 'error') {
 			showError(result.error.message);
@@ -74,7 +60,7 @@
 
 		deleting = true;
 		error = '';
-		const result = await apiWrite<void>('DELETE', `/api/expenses/${id}`, null, `expense:${id}`);
+		const result = await deleteExpense(id);
 		deleting = false;
 		if (result.kind === 'error') {
 			showError(result.error.message);

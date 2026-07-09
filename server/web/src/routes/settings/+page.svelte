@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { apiGet, apiWrite, exchangeSecret, ApiError } from '$lib/api';
+	import { ApiError } from '$lib/api';
+	import {
+		discardFailedWrite,
+		listFailedWrites,
+		loadPreferences,
+		retryFailedWrite,
+		savePreferences,
+		saveSyncSecret
+	} from '$lib/features/settings';
 	import { authState } from '$lib/stores';
-	import { discard, drain, listAll, retry, type OutboxRecord } from '$lib/outbox';
+	import type { OutboxRecord } from '$lib/outbox';
 	import type { Preferences } from '$lib/types';
 	import { formatDateTime } from '$lib/util';
 
@@ -21,15 +29,14 @@
 
 	async function loadPrefs() {
 		try {
-			prefs = await apiGet<Preferences>('/api/preferences');
+			prefs = await loadPreferences();
 		} catch (e) {
 			if (e instanceof ApiError) prefsMessage = e.message;
 		}
 	}
 
 	async function refreshOutbox() {
-		const all = await listAll();
-		failed = all.filter((r) => r.status === 'failed').sort((a, b) => b.createdAt - a.createdAt);
+		failed = await listFailedWrites();
 	}
 
 	async function saveSecret(event: SubmitEvent) {
@@ -38,7 +45,7 @@
 		if (!secret.trim()) return;
 		secretBusy = true;
 		try {
-			await exchangeSecret(secret.trim());
+			await saveSyncSecret(secret.trim());
 			secret = '';
 			secretMessage = 'Secret saved. Reloading…';
 			await loadPrefs();
@@ -55,7 +62,7 @@
 		if (!prefs) return;
 		prefsBusy = true;
 		prefsMessage = '';
-		const result = await apiWrite<Preferences>('PUT', '/api/preferences', prefs, 'preferences');
+		const result = await savePreferences(prefs);
 		prefsBusy = false;
 		if (result.kind === 'error') {
 			prefsMessage = result.error.message;
@@ -66,14 +73,13 @@
 	}
 
 	async function onRetry(id: number) {
-		await retry(id);
-		await drain();
+		await retryFailedWrite(id);
 		await refreshOutbox();
 	}
 
 	async function onDiscard(id: number) {
 		if (!confirm('Discard this failed write?')) return;
-		await discard(id);
+		await discardFailedWrite(id);
 		await refreshOutbox();
 	}
 

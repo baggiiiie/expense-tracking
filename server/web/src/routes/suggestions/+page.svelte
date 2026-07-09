@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiGet, apiWrite, ApiError } from '$lib/api';
-	import type { Category, Expense, Preferences, WalletSuggestion } from '$lib/types';
-	import { formatDateTime, formatMoney, newId, nowMillis } from '$lib/util';
+	import { ApiError } from '$lib/api';
+	import {
+		confirmSuggestion,
+		dismissSuggestion,
+		loadSuggestionInbox,
+		type ConfirmSuggestionValue
+	} from '$lib/features/wallet-suggestions';
+	import type { Category, Preferences, WalletSuggestion } from '$lib/types';
+	import { formatDateTime, formatMoney } from '$lib/util';
 	import ExpenseForm from '$lib/ExpenseForm.svelte';
 
 	let suggestions = $state<WalletSuggestion[]>([]);
@@ -16,14 +22,10 @@
 	async function load() {
 		loading = true;
 		try {
-			const [s, c, p] = await Promise.all([
-				apiGet<{ wallet_suggestions: WalletSuggestion[] }>('/api/wallet-suggestions?status=pending'),
-				apiGet<{ categories: Category[] }>('/api/categories'),
-				apiGet<Preferences>('/api/preferences')
-			]);
-			suggestions = s.wallet_suggestions ?? [];
-			categories = (c.categories ?? []).filter((x) => !x.deleted_at);
-			prefs = p;
+			const model = await loadSuggestionInbox();
+			suggestions = model.suggestions;
+			categories = model.categories;
+			prefs = model.prefs;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -37,25 +39,12 @@
 		notice = '';
 	}
 
-	async function confirm(value: {
-		amount: number;
-		currency: string;
-		category_id: string;
-		merchant: string;
-		description: string;
-		date: number;
-	}) {
+	async function confirm(value: ConfirmSuggestionValue) {
 		if (!active) return;
 		error = '';
 		notice = '';
 		const confirmedId = active.id;
-		const body = { ...value, id: newId(), client_updated_at: nowMillis() };
-		const result = await apiWrite<{ wallet_suggestion: WalletSuggestion; expense: Expense }>(
-			'POST',
-			`/api/wallet-suggestions/${confirmedId}/confirm`,
-			body,
-			`wallet_suggestion:${confirmedId}`
-		);
+		const result = await confirmSuggestion(confirmedId, value);
 		if (result.kind === 'error') {
 			error = result.error.message;
 			return;
@@ -72,12 +61,7 @@
 	async function dismiss(id: string) {
 		error = '';
 		notice = '';
-		const result = await apiWrite<WalletSuggestion>(
-			'POST',
-			`/api/wallet-suggestions/${id}/dismiss`,
-			null,
-			`wallet_suggestion:${id}`
-		);
+		const result = await dismissSuggestion(id);
 		if (result.kind === 'error') {
 			error = result.error.message;
 			return;

@@ -1,18 +1,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiGet, apiWrite, ApiError } from '$lib/api';
-	import { getDefaultCategoryId, setDefaultCategoryId } from '$lib/default-category';
+	import { ApiError } from '$lib/api';
+	import {
+		categoryIcon,
+		draftFromCategory,
+		emptyCategoryDraft,
+		loadCategoryList,
+		saveCategory,
+		toggleDefaultCategory,
+		type CategoryDraft
+	} from '$lib/features/categories';
 	import type { Category } from '$lib/types';
-	import { displayCategoryIcon, formatMoney, nowMillis, parseAmount } from '$lib/util';
+	import { formatMoney } from '$lib/util';
 
 	let categories = $state<Category[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
-	let editingId = $state<string | null>(null);
-	let name = $state('');
-	let icon = $state('💸');
-	let budgetText = $state('');
+	let draft = $state<CategoryDraft>(emptyCategoryDraft());
 	let busy = $state(false);
 	let showForm = $state(false);
 	let defaultCategoryId = $state('');
@@ -20,11 +25,9 @@
 	async function load() {
 		loading = true;
 		try {
-			const data = await apiGet<{ categories: Category[] }>('/api/categories');
-			categories = (data.categories ?? []).filter((c) => !c.deleted_at);
-			const storedDefault = getDefaultCategoryId();
-			defaultCategoryId = categories.some((cat) => cat.id === storedDefault) ? storedDefault : '';
-			if (storedDefault && !defaultCategoryId) setDefaultCategoryId(null);
+			const model = await loadCategoryList();
+			categories = model.categories;
+			defaultCategoryId = model.defaultCategoryId;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -33,43 +36,25 @@
 	}
 
 	function reset() {
-		editingId = null;
-		name = '';
-		icon = '💸';
-		budgetText = '';
+		draft = emptyCategoryDraft();
 		error = '';
 		showForm = false;
 	}
 
 	function startEdit(cat: Category) {
-		editingId = cat.id;
-		name = cat.name;
-		icon = displayCategoryIcon(cat);
-		budgetText = cat.budget != null ? (cat.budget / 100).toFixed(2) : '';
+		draft = draftFromCategory(cat);
 		showForm = true;
 	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!name.trim()) {
-			error = 'Name is required.';
+		busy = true;
+		const result = await saveCategory(draft);
+		busy = false;
+		if (result.kind === 'validation-error') {
+			error = result.message;
 			return;
 		}
-		busy = true;
-		const budget = budgetText.trim() === '' ? null : parseAmount(budgetText);
-		const body = {
-			name: name.trim(),
-			icon: icon.trim() || '💸',
-			budget,
-			client_updated_at: nowMillis()
-		};
-
-		const url = editingId ? `/api/categories/${editingId}` : '/api/categories';
-		const method = editingId ? 'PUT' : 'POST';
-		const targetKey = `category:${editingId ?? name.toLowerCase()}`;
-
-		const result = await apiWrite<Category>(method, url, body, targetKey);
-		busy = false;
 		if (result.kind === 'error') {
 			error = result.error.message;
 			return;
@@ -79,24 +64,7 @@
 	}
 
 	function toggleDefault(cat: Category) {
-		const next = defaultCategoryId === cat.id ? '' : cat.id;
-		defaultCategoryId = next;
-		setDefaultCategoryId(next || null);
-	}
-
-	async function remove(id: string) {
-		if (!confirm('Delete this category?')) return;
-		const before = categories;
-		categories = categories.filter((c) => c.id !== id);
-		if (defaultCategoryId === id) {
-			defaultCategoryId = '';
-			setDefaultCategoryId(null);
-		}
-		const result = await apiWrite<void>('DELETE', `/api/categories/${id}`, null, `category:${id}`);
-		if (result.kind === 'error') {
-			categories = before;
-			error = result.error.message;
-		}
+		defaultCategoryId = toggleDefaultCategory(defaultCategoryId, cat);
 	}
 
 	onMount(load);
@@ -107,7 +75,7 @@
 	<button type="button" class="modal-overlay" onclick={reset} aria-label="Close modal"></button>
 	<div class="modal">
 		<div class="modal-header">
-			<h3>{editingId ? 'Edit Category' : 'New Category'}</h3>
+			<h3>{draft.editingId ? 'Edit Category' : 'New Category'}</h3>
 			<button type="button" class="modal-close" onclick={reset} aria-label="Close modal">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
@@ -118,19 +86,19 @@
 		<form onsubmit={submit}>
 			<div class="form-row">
 				<label class="icon-field">
-					<input type="text" maxlength="4" bind:value={icon} class="icon-input" />
+					<input type="text" maxlength="4" bind:value={draft.icon} class="icon-input" />
 				</label>
 				<label class="name-field">
-					<input type="text" placeholder="Category name" bind:value={name} required />
+					<input type="text" placeholder="Category name" bind:value={draft.name} required />
 				</label>
 			</div>
 			<label class="budget-field">
 				<span>Monthly budget (optional)</span>
-				<input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" bind:value={budgetText} />
+				<input type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" bind:value={draft.budgetText} />
 			</label>
 			{#if error}<p class="error">{error}</p>{/if}
 			<button type="submit" class="submit-btn" disabled={busy}>
-				{editingId ? 'Save Changes' : 'Add Category'}
+				{draft.editingId ? 'Save Changes' : 'Add Category'}
 			</button>
 		</form>
 	</div>
@@ -152,7 +120,7 @@
 		{#each categories as cat (cat.id)}
 			<div class="category-row" class:is-default={defaultCategoryId === cat.id}>
 				<button type="button" class="category-main" onclick={() => startEdit(cat)}>
-					<div class="cat-icon">{displayCategoryIcon(cat)}</div>
+					<div class="cat-icon">{categoryIcon(cat)}</div>
 					<div class="cat-info">
 						<div class="cat-name">{cat.name}</div>
 						{#if defaultCategoryId === cat.id}

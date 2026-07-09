@@ -1,40 +1,31 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiGet, ApiError } from '$lib/api';
-	import type { Category, Expense, ExpenseListResponse, WalletSuggestion } from '$lib/types';
+	import { ApiError } from '$lib/api';
 	import {
-		dateInputValue,
-		dayKey,
-		displayCategoryIcon,
+		categoryColor,
+		categoryIcon,
+		categoryLookup,
+		expenseCategory
+	} from '$lib/features/categories';
+	import {
+		formatSummaryAmount,
+		groupExpenses,
+		initialExpenseRange,
+		loadExpenseFeed,
+		loadOlderExpenses,
+		rangeValidationError,
+		summarizeExpenses,
+		type ExpenseRange,
+		type ExpenseRangePreset
+	} from '$lib/features/expenses';
+	import type { Category, Expense } from '$lib/types';
+	import {
 		formatDate,
 		formatMoney,
-		formatTime,
-		nowSeconds,
-		unixFromDateInput
+		formatTime
 	} from '$lib/util';
 
-	const categoryColors: Record<string, string> = {
-		'Food': '#FF9500',
-		'Transport': '#007AFF',
-		'Shopping': '#FF2D55',
-		'Entertainment': '#AF52DE',
-		'Bills': '#FF3B30',
-		'Health': '#34C759',
-		'Education': '#5856D6',
-		'Travel': '#00C7BE',
-		'Other': '#8E8E93',
-	};
-
-	function getCategoryColor(category: string): string {
-		return categoryColors[category] || '#8E8E93';
-	}
-
-	type RangePreset = 'month' | 'week' | 'custom';
-
-	const initialCustomStart = (() => {
-		const now = new Date();
-		return dateInputValue(Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000));
-	})();
+	const initialRange = initialExpenseRange();
 
 	let expenses = $state<Expense[]>([]);
 	let categories = $state<Category[]>([]);
@@ -42,96 +33,37 @@
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state('');
-	let rangePreset = $state<RangePreset>('month');
-	let customStart = $state(initialCustomStart);
-	let customEnd = $state(dateInputValue(nowSeconds()));
+	let rangePreset = $state<ExpenseRangePreset>(initialRange.preset);
+	let customStart = $state(initialRange.customStart);
+	let customEnd = $state(initialRange.customEnd);
 	let rangeTotal = $state(0);
 	let pendingSuggestionCount = $state(0);
 
-	const categoriesById: Map<string, Category> = $derived.by(
-		() => new Map(categories.map((category) => [category.id, category]))
-	);
+	const categoriesById: Map<string, Category> = $derived.by(() => categoryLookup(categories));
+	const groups = $derived.by(() => groupExpenses(expenses));
 
-	function getExpenseCategory(expense: Expense): Category {
-		return categoriesById.get(expense.category_id) ?? {
-			id: expense.category_id,
-			name: expense.category || 'Other',
-			icon: '',
-			budget: null,
-			created_at: 0,
-			updated_at: 0,
-			client_updated_at: 0
-		};
-	}
+	const summaryTotal = $derived.by(() => summarizeExpenses(expenses, rangeTotal));
 
-	type Group = { dayKey: string; date: number; items: Expense[]; dailyTotal: number };
-	const groups: Group[] = $derived.by(() => {
-		const map = new Map<string, Group>();
-		for (const e of expenses) {
-			const key = dayKey(e.date);
-			const existing = map.get(key);
-			if (existing) {
-				existing.items.push(e);
-				existing.dailyTotal += e.amount;
-			} else {
-				map.set(key, { dayKey: key, date: e.date, items: [e], dailyTotal: e.amount });
-			}
-		}
-		return Array.from(map.values()).sort((a, b) => b.date - a.date);
-	});
-
-	const summaryTotal = $derived.by(() => ({
-		total: rangeTotal,
-		currency: expenses.find((e) => e.currency)?.currency ?? 'SGD'
-	}));
-
-	function rangeBounds(): { since: number; before: number } {
-		const now = new Date();
-		const beforeNow = Math.floor(Date.now() / 1000) + 1;
-		if (rangePreset === 'week') {
-			const start = new Date(now);
-			start.setHours(0, 0, 0, 0);
-			start.setDate(start.getDate() - start.getDay());
-			return { since: Math.floor(start.getTime() / 1000), before: beforeNow };
-		}
-		if (rangePreset === 'custom') {
-			const since = unixFromDateInput(customStart);
-			const end = new Date(unixFromDateInput(customEnd) * 1000);
-			end.setDate(end.getDate() + 1);
-			return { since, before: Math.floor(end.getTime() / 1000) };
-		}
-		const start = new Date(now.getFullYear(), now.getMonth(), 1);
-		return { since: Math.floor(start.getTime() / 1000), before: beforeNow };
-	}
-
-	function expensesURL(beforeOverride?: number): string {
-		const bounds = rangeBounds();
-		const params = new URLSearchParams({
-			since: String(bounds.since),
-			before: String(beforeOverride ?? bounds.before)
-		});
-		return `/api/expenses?${params.toString()}`;
+	function currentRange(): ExpenseRange {
+		return { preset: rangePreset, customStart, customEnd };
 	}
 
 	async function loadFirstPage() {
-		const bounds = rangeBounds();
-		if (bounds.before <= bounds.since) {
-			error = 'Choose an end date after the start date.';
+		const range = currentRange();
+		const validationError = rangeValidationError(range);
+		if (validationError) {
+			error = validationError;
 			return;
 		}
 		loading = true;
 		error = '';
 		try {
-			const [expenseData, categoryData, suggestionData] = await Promise.all([
-				apiGet<ExpenseListResponse>(expensesURL()),
-				apiGet<{ categories: Category[] }>('/api/categories'),
-				apiGet<{ wallet_suggestions: WalletSuggestion[]; count: number }>('/api/wallet-suggestions?status=pending')
-			]);
-			expenses = expenseData.expenses ?? [];
-			categories = (categoryData.categories ?? []).filter((category) => !category.deleted_at);
-			cursor = expenseData.next_before;
-			rangeTotal = expenseData.total ?? expenses.reduce((sum, e) => sum + e.amount, 0);
-			pendingSuggestionCount = suggestionData.count ?? suggestionData.wallet_suggestions?.length ?? 0;
+			const model = await loadExpenseFeed(range);
+			expenses = model.expenses;
+			categories = model.categories;
+			cursor = model.cursor;
+			rangeTotal = model.rangeTotal;
+			pendingSuggestionCount = model.pendingSuggestionCount;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 			else if (!(e instanceof ApiError)) error = String(e);
@@ -144,9 +76,9 @@
 		if (loadingMore || cursor == null) return;
 		loadingMore = true;
 		try {
-			const data = await apiGet<ExpenseListResponse>(expensesURL(cursor));
+			const data = await loadOlderExpenses(currentRange(), cursor);
 			expenses = [...expenses, ...(data.expenses ?? [])];
-			cursor = data.next_before;
+			cursor = data.cursor;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
@@ -155,17 +87,12 @@
 	}
 
 	async function changeRange(event: Event) {
-		rangePreset = (event.currentTarget as HTMLSelectElement).value as RangePreset;
+		rangePreset = (event.currentTarget as HTMLSelectElement).value as ExpenseRangePreset;
 		await loadFirstPage();
 	}
 
 	async function applyCustomRange() {
 		await loadFirstPage();
-	}
-
-	function formatMonthlyAmount(cents: number): string {
-		const major = cents / 100;
-		return major.toFixed(2);
 	}
 
 	onMount(loadFirstPage);
@@ -184,7 +111,7 @@
 	</div>
 	<div class="monthly-amount">
 		<span class="currency">{summaryTotal.currency}</span>
-		<span class="amount">{formatMonthlyAmount(summaryTotal.total)}</span>
+		<span class="amount">{formatSummaryAmount(summaryTotal.total)}</span>
 	</div>
 	{#if rangePreset === 'custom'}
 		<div class="custom-range">
@@ -234,10 +161,10 @@
 					<span>{formatMoney(group.dailyTotal, expenses[0]?.currency)}</span>
 				</div>
 				{#each group.items as exp (exp.id)}
-					{@const category = getExpenseCategory(exp)}
+					{@const category = expenseCategory(exp, categoriesById)}
 					<a class="expense-row" href={`/expenses/${exp.id}`}>
-						<div class="row-icon" style="background: {getCategoryColor(category.name)}20; color: {getCategoryColor(category.name)}">
-							{displayCategoryIcon(category)}
+						<div class="row-icon" style="background: {categoryColor(category.name)}20; color: {categoryColor(category.name)}">
+							{categoryIcon(category)}
 						</div>
 						<div class="row-info">
 							<div class="row-merchant">{exp.merchant || exp.description || exp.category}</div>
