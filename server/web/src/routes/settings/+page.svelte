@@ -94,6 +94,26 @@
 	</div>
 {/if}
 
+<div class="settings-section">
+	<div class="section-card nav-card">
+		<a href="/categories" class="nav-row">
+			<span class="nav-icon">🏷️</span>
+			<span>Categories</span>
+			<span class="chevron">›</span>
+		</a>
+		<a href="/recurring" class="nav-row">
+			<span class="nav-icon">🔄</span>
+			<span>Recurring</span>
+			<span class="chevron">›</span>
+		</a>
+		<a href="/suggestions" class="nav-row">
+			<span class="nav-icon">💳</span>
+			<span>Wallet Suggestions</span>
+			<span class="chevron">›</span>
+		</a>
+	</div>
+</div>
+
 <!-- Server section -->
 <div class="settings-section">
 	<div class="section-title">Server</div>
@@ -205,15 +225,47 @@
 	}
 
 	.section-card {
-		background: #f9fafb;
-		border-radius: 14px;
-		padding: 16px;
+		background: #f2f2f7;
+		border-radius: 12px;
+		padding: 0 16px;
+	}
+
+	.nav-card {
+		overflow: hidden;
+	}
+
+	.nav-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-height: 48px;
+		color: #1a1a1a;
+		text-decoration: none;
+		border-bottom: 0.5px solid #d1d1d6;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.nav-row:last-child {
+		border-bottom: none;
+	}
+
+	.nav-icon {
+		width: 24px;
+		text-align: center;
+	}
+
+	.chevron {
+		margin-left: auto;
+		color: #8e8e93;
+		font-size: 24px;
+		line-height: 1;
 	}
 
 	form {
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+		padding: 16px 0;
 	}
 
 	.field {
@@ -279,6 +331,7 @@
 
 	.loading {
 		margin: 0;
+		padding: 16px 0;
 		color: #888;
 	}
 
@@ -336,6 +389,12 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		min-height: 48px;
+		border-bottom: 0.5px solid #d1d1d6;
+	}
+
+	.about-row:last-child {
+		border-bottom: none;
 	}
 
 	.about-value {

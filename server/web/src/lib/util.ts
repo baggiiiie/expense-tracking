@@ -53,7 +53,7 @@ export function formatDateTime(unixSeconds: number): string {
 
 export function formatTime(unixSeconds: number): string {
 	const d = new Date(unixSeconds * 1000);
-	return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 // dayKey produces a "YYYY-MM-DD" bucket using the local timezone, suitable

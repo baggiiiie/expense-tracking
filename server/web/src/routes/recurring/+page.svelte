@@ -269,7 +269,7 @@
 	.recurring-list {
 		display: flex;
 		flex-direction: column;
-		margin-top: 12px;
+		margin-top: 20px;
 	}
 
 	.recurring-row {
@@ -315,7 +315,7 @@
 	}
 
 	.row-merchant {
-		font-size: 15px;
+		font-size: 17px;
 		font-weight: 600;
 		white-space: nowrap;
 		overflow: hidden;
@@ -334,7 +334,7 @@
 	}
 
 	.row-amount {
-		font-size: 15px;
+		font-size: 17px;
 		font-weight: 600;
 	}
 
@@ -350,26 +350,26 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 60px 16px;
+		padding: 140px 16px 60px;
 		text-align: center;
 	}
 
 	.empty-icon {
-		font-size: 40px;
-		margin-bottom: 12px;
-		opacity: 0.6;
+		font-size: 48px;
+		margin-bottom: 18px;
+		color: #8e8e93;
 	}
 
 	.empty-title {
 		margin: 0;
-		font-size: 18px;
+		font-size: 24px;
 		font-weight: 700;
 	}
 
 	.empty-desc {
-		margin: 4px 0 0;
-		font-size: 14px;
-		color: #999;
+		margin: 6px 0 0;
+		font-size: 16px;
+		color: #8e8e93;
 	}
 
 	/* Modal */
@@ -476,23 +476,22 @@
 		font-weight: 500;
 	}
 
-	/* FAB */
 	.fab {
 		position: fixed;
-		bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+		top: calc(env(safe-area-inset-top, 0px) + 22px);
 		right: 16px;
-		width: 52px;
-		height: 52px;
+		width: 44px;
+		height: 44px;
 		border-radius: 50%;
-		background: #007AFF;
-		color: white;
+		background: transparent;
+		color: #007AFF;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 4px 14px rgba(0, 122, 255, 0.3);
+		box-shadow: none;
 		border: none;
 		cursor: pointer;
-		z-index: 5;
+		z-index: 20;
 		-webkit-tap-highlight-color: transparent;
 	}
 

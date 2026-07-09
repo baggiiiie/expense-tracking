@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiGet, ApiError } from '$lib/api';
-	import type { Category, Expense, ExpenseListResponse } from '$lib/types';
+	import type { Category, Expense, ExpenseListResponse, WalletSuggestion } from '$lib/types';
 	import {
 		dateInputValue,
 		dayKey,
@@ -35,6 +35,7 @@
 		const now = new Date();
 		return dateInputValue(Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000));
 	})();
+
 	let expenses = $state<Expense[]>([]);
 	let categories = $state<Category[]>([]);
 	let cursor = $state<number | undefined>(undefined);
@@ -45,6 +46,7 @@
 	let customStart = $state(initialCustomStart);
 	let customEnd = $state(dateInputValue(nowSeconds()));
 	let rangeTotal = $state(0);
+	let pendingSuggestionCount = $state(0);
 
 	const categoriesById: Map<string, Category> = $derived.by(
 		() => new Map(categories.map((category) => [category.id, category]))
@@ -76,15 +78,6 @@
 			}
 		}
 		return Array.from(map.values()).sort((a, b) => b.date - a.date);
-	});
-
-	const rangeLabel = $derived.by(() => {
-		switch (rangePreset) {
-			case 'week': return 'this week';
-			case 'custom': return 'custom range';
-			case 'month':
-			default: return 'this month';
-		}
 	});
 
 	const summaryTotal = $derived.by(() => ({
@@ -129,14 +122,16 @@
 		loading = true;
 		error = '';
 		try {
-			const [expenseData, categoryData] = await Promise.all([
+			const [expenseData, categoryData, suggestionData] = await Promise.all([
 				apiGet<ExpenseListResponse>(expensesURL()),
-				apiGet<{ categories: Category[] }>('/api/categories')
+				apiGet<{ categories: Category[] }>('/api/categories'),
+				apiGet<{ wallet_suggestions: WalletSuggestion[]; count: number }>('/api/wallet-suggestions?status=pending')
 			]);
 			expenses = expenseData.expenses ?? [];
 			categories = (categoryData.categories ?? []).filter((category) => !category.deleted_at);
 			cursor = expenseData.next_before;
 			rangeTotal = expenseData.total ?? expenses.reduce((sum, e) => sum + e.amount, 0);
+			pendingSuggestionCount = suggestionData.count ?? suggestionData.wallet_suggestions?.length ?? 0;
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 			else if (!(e instanceof ApiError)) error = String(e);
@@ -176,7 +171,6 @@
 	onMount(loadFirstPage);
 </script>
 
-<!-- Range total header -->
 <div class="monthly-header">
 	<div class="monthly-label">
 		<span>Spent</span>
@@ -188,6 +182,10 @@
 			</select>
 		</label>
 	</div>
+	<div class="monthly-amount">
+		<span class="currency">{summaryTotal.currency}</span>
+		<span class="amount">{formatMonthlyAmount(summaryTotal.total)}</span>
+	</div>
 	{#if rangePreset === 'custom'}
 		<div class="custom-range">
 			<input type="date" bind:value={customStart} aria-label="Custom start date" />
@@ -195,13 +193,7 @@
 			<input type="date" bind:value={customEnd} aria-label="Custom end date" />
 			<button type="button" onclick={applyCustomRange}>Apply</button>
 		</div>
-	{:else}
-		<div class="range-caption">{rangeLabel}</div>
 	{/if}
-	<div class="monthly-amount">
-		<span class="currency">{summaryTotal.currency}</span>
-		<span class="amount">{formatMonthlyAmount(summaryTotal.total)}</span>
-	</div>
 </div>
 
 {#if loading}
@@ -216,39 +208,52 @@
 		<p class="empty-desc">{error}</p>
 		<button type="button" class="retry-btn" onclick={loadFirstPage}>Retry</button>
 	</div>
-{:else if expenses.length === 0}
-	<div class="empty-state">
-		<div class="empty-icon">📥</div>
-		<p class="empty-title">No Expenses</p>
-		<p class="empty-desc">Tap + to add your first expense</p>
-	</div>
 {:else}
-	{#each groups as group (group.dayKey)}
-		<section class="day-section">
-			<div class="day-header">
-				<span>{formatDate(group.date)}</span>
-				<span>{formatMoney(group.dailyTotal, expenses[0]?.currency)}</span>
-			</div>
-			{#each group.items as exp (exp.id)}
-				{@const category = getExpenseCategory(exp)}
-				<a class="expense-row" href={`/expenses/${exp.id}`}>
-					<div class="row-icon" style="background: {getCategoryColor(category.name)}20; color: {getCategoryColor(category.name)}">
-						{displayCategoryIcon(category)}
-					</div>
-					<div class="row-info">
-						<div class="row-merchant">{exp.merchant || exp.description || exp.category}</div>
-						<div class="row-time">{formatTime(exp.date)}</div>
-					</div>
-					<div class="row-amount">-{formatMoney(exp.amount, exp.currency)}</div>
-				</a>
-			{/each}
-		</section>
-	{/each}
+	{#if pendingSuggestionCount > 0}
+		<a href="/suggestions" class="suggestion-link">
+			<span class="suggestion-icon">💳</span>
+			<span>{pendingSuggestionCount} pending suggestion{pendingSuggestionCount === 1 ? '' : 's'}</span>
+			<span class="suggestion-chevron">›</span>
+		</a>
+	{/if}
 
-	{#if cursor != null}
-		<button type="button" class="loadmore" onclick={loadMore} disabled={loadingMore}>
-			{loadingMore ? 'Loading…' : 'Load older'}
-		</button>
+	{#if expenses.length === 0}
+		<div class="empty-state">
+			<svg class="empty-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M14 30h12a6 6 0 0 0 12 0h12" />
+				<path d="M18 18h28l10 14v16a6 6 0 0 1-6 6H14a6 6 0 0 1-6-6V32l10-14Z" />
+			</svg>
+			<p class="empty-title">No Expenses</p>
+			<p class="empty-desc">Tap + to add your first expense</p>
+		</div>
+	{:else}
+		{#each groups as group (group.dayKey)}
+			<section class="day-section">
+				<div class="day-header">
+					<span>{formatDate(group.date)}</span>
+					<span>{formatMoney(group.dailyTotal, expenses[0]?.currency)}</span>
+				</div>
+				{#each group.items as exp (exp.id)}
+					{@const category = getExpenseCategory(exp)}
+					<a class="expense-row" href={`/expenses/${exp.id}`}>
+						<div class="row-icon" style="background: {getCategoryColor(category.name)}20; color: {getCategoryColor(category.name)}">
+							{displayCategoryIcon(category)}
+						</div>
+						<div class="row-info">
+							<div class="row-merchant">{exp.merchant || exp.description || exp.category}</div>
+							<div class="row-time">{formatTime(exp.date)}</div>
+						</div>
+						<div class="row-amount">-{formatMoney(exp.amount, exp.currency)}</div>
+					</a>
+				{/each}
+			</section>
+		{/each}
+
+		{#if cursor != null}
+			<button type="button" class="loadmore" onclick={loadMore} disabled={loadingMore}>
+				{loadingMore ? 'Loading…' : 'Load older'}
+			</button>
+		{/if}
 	{/if}
 {/if}
 
@@ -264,7 +269,7 @@
 	/* Monthly Total Header — compact for mobile */
 	.monthly-header {
 		text-align: center;
-		padding: 20px 0 16px;
+		padding: 78px 0 16px;
 	}
 
 	.monthly-label {
@@ -272,84 +277,95 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		font-size: 16px;
-		font-weight: 600;
+		font-size: 24px;
+		font-weight: 700;
 		color: #1a1a1a;
 	}
 
+	.range-picker {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.range-picker::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		right: 12px;
+		width: 8px;
+		height: 8px;
+		border-right: 1.8px solid #8e8e93;
+		border-bottom: 1.8px solid #8e8e93;
+		transform: translateY(-65%) rotate(45deg);
+		pointer-events: none;
+	}
+
 	.range-picker select {
-		padding: 2px 28px 2px 10px;
-		border: 1.5px solid #e8e8e8;
+		appearance: none;
+		-webkit-appearance: none;
+		padding: 2px 14px 3px;
+		padding-right: 32px;
+		border: 1.5px solid #e5e5ea;
 		border-radius: 999px;
-		font-size: 16px;
-		font-weight: 600;
+		font-size: 24px;
+		font-weight: 700;
 		background: white;
 		color: #1a1a1a;
 		cursor: pointer;
 	}
 
-	.range-caption {
-		margin-top: 4px;
-		font-size: 12px;
-		font-weight: 600;
-		color: #999;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
 	.custom-range {
-		margin: 10px auto 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
 		flex-wrap: wrap;
-		font-size: 13px;
+		margin: 14px auto 0;
 		color: #777;
+		font-size: 13px;
 	}
 
 	.custom-range input,
 	.custom-range button {
-		border: 1.5px solid #e8e8e8;
+		padding: 7px 8px;
+		border: 1.5px solid #e5e5ea;
 		border-radius: 10px;
 		background: white;
 		font-size: 13px;
 		font-weight: 600;
-		padding: 7px 8px;
 	}
 
 	.custom-range button {
-		background: #007AFF;
 		border-color: #007AFF;
+		background: #007AFF;
 		color: white;
 		cursor: pointer;
 	}
 
 	.monthly-amount {
-		margin-top: 8px;
+		margin-top: 28px;
 		display: flex;
 		align-items: baseline;
 		justify-content: center;
-		gap: 3px;
+		gap: 4px;
 	}
 
 	.monthly-amount .currency {
-		font-size: 22px;
+		font-size: 32px;
 		font-weight: 400;
-		color: #999;
+		color: #8e8e93;
 	}
 
 	.monthly-amount .amount {
-		font-size: 38px;
+		font-size: 56px;
 		font-weight: 400;
-		letter-spacing: -1px;
+		letter-spacing: 0;
 	}
 
 	@media (min-width: 640px) {
-		.monthly-amount .currency { font-size: 28px; }
-		.monthly-amount .amount { font-size: 48px; }
-		.monthly-label { font-size: 18px; }
-		.range-picker select { font-size: 18px; }
+		.monthly-header {
+			padding-top: 86px;
+		}
 	}
 
 	/* Empty State */
@@ -358,27 +374,28 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 60px 16px;
+		padding: 152px 16px 60px;
 		text-align: center;
 	}
 
 	.empty-icon {
-		font-size: 40px;
-		margin-bottom: 12px;
-		opacity: 0.6;
+		width: 66px;
+		height: 66px;
+		margin-bottom: 24px;
+		color: #8e8e93;
 	}
 
 	.empty-title {
 		margin: 0;
-		font-size: 18px;
-		font-weight: 700;
+		font-size: 30px;
+		font-weight: 800;
 		color: #1a1a1a;
 	}
 
 	.empty-desc {
-		margin: 4px 0 0;
-		font-size: 14px;
-		color: #999;
+		margin: 8px 0 0;
+		font-size: 18px;
+		color: #8e8e93;
 	}
 
 	.retry-btn {
@@ -391,6 +408,33 @@
 		font-weight: 600;
 		cursor: pointer;
 		-webkit-tap-highlight-color: transparent;
+	}
+
+	.suggestion-link {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-height: 44px;
+		margin: 18px 0 4px;
+		padding: 10px 0;
+		border-bottom: 0.5px solid #f2f2f2;
+		color: #1a1a1a;
+		text-decoration: none;
+		font-size: 16px;
+		font-weight: 500;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.suggestion-icon {
+		color: #007AFF;
+		font-size: 19px;
+	}
+
+	.suggestion-chevron {
+		margin-left: auto;
+		color: #c7c7cc;
+		font-size: 24px;
+		line-height: 1;
 	}
 
 	/* Day Sections */
@@ -497,17 +541,17 @@
 	/* FAB — positioned for thumb reach */
 	.fab {
 		position: fixed;
-		bottom: calc(70px + env(safe-area-inset-bottom, 0px));
-		right: 16px;
-		width: 52px;
-		height: 52px;
+		bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+		right: 20px;
+		width: 68px;
+		height: 68px;
 		border-radius: 50%;
 		background: #007AFF;
 		color: white;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 4px 14px rgba(0, 122, 255, 0.3);
+		box-shadow: 0 10px 30px rgba(0, 122, 255, 0.24);
 		text-decoration: none;
 		z-index: 5;
 		-webkit-tap-highlight-color: transparent;
@@ -520,10 +564,10 @@
 
 	@media (min-width: 640px) {
 		.fab {
-			width: 56px;
-			height: 56px;
-			right: 20px;
-			bottom: 90px;
+			width: 68px;
+			height: 68px;
+			right: calc((100vw - 480px) / 2 + 20px);
+			bottom: 28px;
 		}
 	}
 </style>

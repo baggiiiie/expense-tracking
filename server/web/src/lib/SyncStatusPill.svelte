@@ -53,27 +53,29 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 36px;
-		height: 36px;
+		width: 52px;
+		height: 52px;
 		border-radius: 50%;
-		background: #f0fdf4;
+		background: #ffffff;
 		color: #16a34a;
 		text-decoration: none;
 		position: relative;
+		box-shadow: 0 12px 34px rgba(0, 0, 0, 0.08);
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	.indicator[data-phase='offline'] {
-		background: #fefce8;
+		background: #ffffff;
 		color: #ca8a04;
 	}
 
 	.indicator[data-phase='syncing'] {
-		background: #eff6ff;
+		background: #ffffff;
 		color: #2563eb;
 	}
 
 	.indicator[data-phase='errors'] {
-		background: #fef2f2;
+		background: #ffffff;
 		color: #dc2626;
 	}
 

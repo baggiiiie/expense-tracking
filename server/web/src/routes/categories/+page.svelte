@@ -179,7 +179,6 @@
 	</div>
 {/if}
 
-<!-- Add FAB -->
 <button type="button" class="fab" onclick={() => { showForm = true; }} aria-label="Add Category">
 	<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 		<line x1="12" y1="5" x2="12" y2="19"/>
@@ -192,7 +191,7 @@
 	.category-list {
 		display: flex;
 		flex-direction: column;
-		margin-top: 8px;
+		margin-top: 20px;
 	}
 
 	.category-row {
@@ -204,9 +203,6 @@
 	}
 
 	.category-row.is-default {
-		background: #f8fbff;
-		border-radius: 10px;
-		border-bottom-color: transparent;
 		padding-right: 4px;
 	}
 
@@ -245,8 +241,8 @@
 	}
 
 	.cat-name {
-		font-size: 15px;
-		font-weight: 600;
+		font-size: 17px;
+		font-weight: 400;
 	}
 
 	.cat-budget,
@@ -262,13 +258,13 @@
 	}
 
 	.default-btn {
-		width: 36px;
-		height: 36px;
-		border: 1.5px solid #e8e8e8;
+		width: 40px;
+		height: 40px;
+		border: none;
 		border-radius: 50%;
-		background: white;
+		background: transparent;
 		color: #c7c7cc;
-		font-size: 18px;
+		font-size: 20px;
 		line-height: 1;
 		cursor: pointer;
 		-webkit-tap-highlight-color: transparent;
@@ -276,9 +272,7 @@
 	}
 
 	.default-btn.active {
-		border-color: #bfdbfe;
-		background: #eff6ff;
-		color: #007AFF;
+		color: #ffcc00;
 	}
 
 	/* Empty State */
@@ -287,26 +281,26 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 60px 16px;
+		padding: 140px 16px 60px;
 		text-align: center;
 	}
 
 	.empty-icon {
-		font-size: 40px;
-		margin-bottom: 12px;
-		opacity: 0.6;
+		font-size: 48px;
+		margin-bottom: 18px;
+		color: #8e8e93;
 	}
 
 	.empty-title {
 		margin: 0;
-		font-size: 18px;
+		font-size: 24px;
 		font-weight: 700;
 	}
 
 	.empty-desc {
-		margin: 4px 0 0;
-		font-size: 14px;
-		color: #999;
+		margin: 6px 0 0;
+		font-size: 16px;
+		color: #8e8e93;
 	}
 
 	/* Modal */
@@ -437,23 +431,22 @@
 		font-weight: 500;
 	}
 
-	/* FAB */
 	.fab {
 		position: fixed;
-		bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+		top: calc(env(safe-area-inset-top, 0px) + 22px);
 		right: 16px;
-		width: 52px;
-		height: 52px;
+		width: 44px;
+		height: 44px;
 		border-radius: 50%;
-		background: #007AFF;
-		color: white;
+		background: transparent;
+		color: #007AFF;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 4px 14px rgba(0, 122, 255, 0.3);
+		box-shadow: none;
 		border: none;
 		cursor: pointer;
-		z-index: 5;
+		z-index: 20;
 		-webkit-tap-highlight-color: transparent;
 	}
 
