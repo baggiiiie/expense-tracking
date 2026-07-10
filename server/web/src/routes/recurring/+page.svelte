@@ -37,7 +37,15 @@
 			categories = model.categories;
 			prefs = model.prefs;
 			defaultCategoryId = model.defaultCategoryId;
-			if (!showForm) draft = emptyRecurringDraft(model.prefs.currency, model.defaultCategoryId);
+			if (!showForm) {
+				draft = emptyRecurringDraft(model.prefs.currency, model.defaultCategoryId);
+			} else if (!draft.editingId) {
+				draft = {
+					...draft,
+					currency: draft.currency === 'USD' ? model.prefs.currency : draft.currency,
+					categoryId: draft.categoryId || model.defaultCategoryId
+				};
+			}
 		} catch (e) {
 			if (e instanceof ApiError && e.status !== 401) error = e.message;
 		} finally {
