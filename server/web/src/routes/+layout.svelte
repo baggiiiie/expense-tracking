@@ -8,6 +8,7 @@
 	import UpdateBanner from '$lib/UpdateBanner.svelte';
 	import IosInstallHint from '$lib/IosInstallHint.svelte';
 	import SyncStatusPill from '$lib/SyncStatusPill.svelte';
+	import FeedbackButton from '$lib/FeedbackButton.svelte';
 
 	let { children } = $props();
 
@@ -86,6 +87,7 @@
 {/if}
 
 {#if !isLoginPage}
+	<FeedbackButton />
 	<UpdateBanner />
 	<IosInstallHint />
 {/if}
