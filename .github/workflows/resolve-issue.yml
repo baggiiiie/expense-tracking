@@ -43,11 +43,11 @@ jobs:
           cache-dependency-path: server/go.sum
       - run: npm ci
       - name: Set up shot-scraper (screen recording)
-        # shot-scraper 1.10+ records web-app demos via Playwright; the
-        # resolve-issue workflow uses it for best-effort visual verification of
-        # web changes. ffmpeg (webm -> gif/mp4) is preinstalled on ubuntu.
+        # shot-scraper 1.10 records web-app demos via Playwright. Visible web
+        # fixes require visual verification; a recording failure
+        # leaves the issue open. ffmpeg (webm -> gif/mp4) is preinstalled.
         run: |
-          pipx install shot-scraper
+          pipx install shot-scraper==1.10
           shot-scraper install
       - name: Resolve issue
         env:

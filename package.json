@@ -6,6 +6,7 @@
   "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
   "scripts": {
     "resolve-issue": "flue run resolve-issue --target node",
+    "test": "node --test .flue/workflows/resolve-issue.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

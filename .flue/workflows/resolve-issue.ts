@@ -14,8 +14,8 @@ import agent from '../agents/issue-resolver.ts';
  *   -> implement fix        (AGENT: edits files in the sandbox)
  *   -> verify               (code: go test for server, pnpm build for web)
  *   -> commit + push        (code: git/gh, direct to the default branch)
- *   -> record web demo      (best-effort: shot-scraper video, web changes only)
- *   -> comment + close      (code: gh; embeds the recording when available)
+ *   -> record web demo      (shot-scraper video, visible web changes only)
+ *   -> comment + close      (code: gh; visible web fixes require a recording)
  *
  * A valid, in-scope fix is pushed straight to the default branch (no PR) and
  * the issue is closed as completed — but only after verification passes. Each
@@ -50,6 +50,10 @@ const Fix = v.object({
 
 // Base URL the recording server is reached at (see recordWebDemo).
 const REC_BASE = 'http://127.0.0.1:8080';
+// Record in portrait at the CSS viewport size of a representative modern
+// iPhone. Keeping this in CSS pixels exercises the app's mobile layout without
+// generating an unnecessarily large video.
+const REC_VIEWPORT = { width: 390, height: 844 } as const;
 // Demo credentials for the throwaway recording server. The web app gates the
 // whole UI behind /login (an unauthenticated API call 401s and redirects), so
 // the workflow launches `expense serve` with these LOGIN_USERNAME/PASSWORD env
@@ -88,6 +92,14 @@ const Recording = v.object({
 });
 type RecordingType = v.InferOutput<typeof Recording>;
 
+type DemoResult = {
+  applicable: boolean;
+  recorded: boolean;
+  gifUrl?: string;
+  mp4Url?: string;
+  note: string;
+};
+
 const Result = v.object({
   issue: v.number(),
   triage: v.object({
@@ -108,8 +120,10 @@ const Result = v.object({
   }),
   demo: v.optional(
     v.object({
+      applicable: v.boolean(),
       recorded: v.boolean(),
       gifUrl: v.optional(v.string()),
+      mp4Url: v.optional(v.string()),
       note: v.string(),
     }),
   ),
@@ -302,17 +316,42 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   const push = await sh(`git push origin HEAD:${defaultBranch}`);
   if (push.exitCode !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
 
-  // 7. Best-effort screen recording for web changes (never blocks the close).
-  // The fix has already landed; this only appends visual evidence to the
-  // closing comment.
-  let demo: { recorded: boolean; gifUrl?: string; mp4Url?: string; note: string } | undefined;
+  // 7. Record visible web changes. The fix has already landed, but an issue
+  // with a visible change stays open if the recording fails so the missing
+  // visual verification cannot be mistaken for success.
+  let demo: DemoResult | undefined;
   let mediaSection = '';
   if (changed.some(isWeb)) {
     demo = await recordWebDemo({ harness, sh, session, n, title: issue.title }).catch(
-      (err: unknown) => ({ recorded: false, note: `recording error: ${String(err)}` }),
+      (err: unknown): DemoResult => ({
+        applicable: true,
+        recorded: false,
+        note: `recording error: ${String(err)}`,
+      }),
     );
-    if (demo?.recorded && demo.gifUrl) {
-      mediaSection = `\n\n**Verified in-browser:**\n\n![demo](${demo.gifUrl})`;
+    if (demo.applicable && !demo.recorded) {
+      await comment(
+        `Fixed in ${sha} on \`${defaultBranch}\`, but screen recording failed: ` +
+          `\`${demo.note}\`. Leaving open for visual verification.`,
+      );
+      return {
+        issue: n,
+        triage: triageOut,
+        fix: { attempted: true, applied: true, commitSha: sha, summary: fix.summary },
+        verification,
+        demo: {
+          applicable: demo.applicable,
+          recorded: demo.recorded,
+          gifUrl: demo.gifUrl,
+          mp4Url: demo.mp4Url,
+          note: demo.note,
+        },
+        closed: false,
+      };
+    }
+    if (demo.recorded) {
+      mediaSection = `\n\n**Verified in-browser:**`;
+      if (demo.gifUrl) mediaSection += `\n\n![demo](${demo.gifUrl})`;
       if (demo.mp4Url) mediaSection += `\n\n[Full-resolution recording](${demo.mp4Url})`;
     }
   }
@@ -325,13 +364,19 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
     triage: triageOut,
     fix: { attempted: true, applied: true, commitSha: sha, summary: fix.summary },
     verification,
-    demo: demo && { recorded: demo.recorded, gifUrl: demo.gifUrl, note: demo.note },
+    demo: demo && {
+      applicable: demo.applicable,
+      recorded: demo.recorded,
+      gifUrl: demo.gifUrl,
+      mp4Url: demo.mp4Url,
+      note: demo.note,
+    },
     closed: true,
   };
 }
 
 /**
- * recordWebDemo — best-effort screen recording of the web app demonstrating the
+ * recordWebDemo — screen recording of the web app demonstrating the
  * fix, published to the orphan `bot-media` branch and returned as inline media.
  *
  * Production-like: it builds the `expense` binary (which embeds the built web
@@ -340,8 +385,8 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
  *
  * The model supplies only the interaction routine (validated structured
  * steps); the workflow owns the sensitive storyboard keys. Any failure returns
- * a non-recorded result rather than throwing — recording is evidence, not a
- * gate.
+ * a non-recorded result so the caller can leave visible web fixes open for
+ * verification.
  */
 type ShellResult = { exitCode: number; stdout: string; stderr: string };
 type RecordDeps = {
@@ -354,7 +399,7 @@ type RecordDeps = {
 
 async function recordWebDemo(
   deps: RecordDeps,
-): Promise<{ recorded: boolean; gifUrl?: string; mp4Url?: string; note: string }> {
+): Promise<DemoResult> {
   const { harness, sh, session, n, title } = deps;
 
   // 1. Ask the agent (which just wrote the fix, so it has full context) for a
@@ -363,8 +408,10 @@ async function recordWebDemo(
     `Produce a short screen-recording routine that demonstrates the fix you just ` +
       `made for issue #${n} ("${title}") in the web app. The workflow already ` +
       `signs in and navigates to your \`path\` for you, so assume the app is ` +
-      `authenticated and the primary nav (\`nav.tabs\`) is visible — do NOT ` +
-      `include any login steps. Set \`path\` to the route your demo starts on. ` +
+      `authenticated — do NOT include any login steps. Set \`path\` to the route ` +
+      `your demo starts on and set each scene's \`waitFor\` to a stable, unique ` +
+      `selector for the feature that scene demonstrates. The recording viewport ` +
+      `is an iPhone-sized ${REC_VIEWPORT.width}x${REC_VIEWPORT.height} portrait display. ` +
       `The app has a few demo expenses seeded across the default categories, so ` +
       `lists are non-empty. Use CSS selectors that exist in the components you ` +
       `edited; any \`wait_for\` selector must match exactly one element ` +
@@ -375,14 +422,25 @@ async function recordWebDemo(
       `commands.`,
     { result: Recording },
   );
-  if (!rec.applicable || rec.scenes.length === 0) {
-    return { recorded: false, note: `not applicable: ${rec.reason}` };
+  if (!rec.applicable) {
+    return { applicable: false, recorded: false, note: `not applicable: ${rec.reason}` };
+  }
+  if (rec.scenes.length === 0) {
+    return {
+      applicable: true,
+      recorded: false,
+      note: 'recording storyboard contained no scenes',
+    };
   }
 
   // 2. Build the production-like server binary (embeds the web dist).
   const build = await sh(`cd server && go build -o /tmp/expense-rec ./cmd/expense`);
   if (build.exitCode !== 0) {
-    return { recorded: false, note: `server build failed: ${build.stderr.slice(-300).trim()}` };
+    return {
+      applicable: true,
+      recorded: false,
+      note: `server build failed: ${build.stderr.slice(-300).trim()}`,
+    };
   }
 
   // 3. Seed a small, recent demo dataset so lists aren't empty. The server
@@ -420,13 +478,17 @@ async function recordWebDemo(
       `shot-scraper video /tmp/storyboard.yml`,
   );
   if (shot.exitCode !== 0) {
-    return { recorded: false, note: `shot-scraper failed: ${shot.stderr.slice(-300).trim()}` };
+    return {
+      applicable: true,
+      recorded: false,
+      note: `shot-scraper failed: ${shot.stderr.slice(-300).trim()}`,
+    };
   }
 
   // 6. Convert to an inline GIF (renders in the comment) and a full-res MP4.
   const gif = await sh(
     `ffmpeg -y -i /tmp/demo.webm -vf ` +
-      `"fps=12,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ` +
+      `"fps=12,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ` +
       `/tmp/issue-${n}.gif`,
   );
   const mp4 = await sh(
@@ -435,7 +497,7 @@ async function recordWebDemo(
   const haveGif = gif.exitCode === 0;
   const haveMp4 = mp4.exitCode === 0;
   if (!haveGif && !haveMp4) {
-    return { recorded: false, note: 'ffmpeg produced no output' };
+    return { applicable: true, recorded: false, note: 'ffmpeg produced no output' };
   }
 
   // 7. Publish to the orphan bot-media branch (per-issue files, overwritten on
@@ -443,11 +505,16 @@ async function recordWebDemo(
   const slug = (await sh(`gh repo view --json nameWithOwner --jq .nameWithOwner`)).stdout.trim();
   const pub = await publishMedia(sh, n, haveGif, haveMp4);
   if (pub.exitCode !== 0) {
-    return { recorded: false, note: `publish failed: ${pub.stderr.slice(-300).trim()}` };
+    return {
+      applicable: true,
+      recorded: false,
+      note: `publish failed: ${pub.stderr.slice(-300).trim()}`,
+    };
   }
 
   const rawBase = `https://raw.githubusercontent.com/${slug}/bot-media`;
   return {
+    applicable: true,
     recorded: true,
     gifUrl: haveGif ? `${rawBase}/issue-${n}.gif` : undefined,
     mp4Url: haveMp4 ? `${rawBase}/issue-${n}.mp4` : undefined,
@@ -456,7 +523,7 @@ async function recordWebDemo(
 }
 
 /** Convert the validated Recording into a shot-scraper storyboard object. */
-function buildStoryboard(rec: RecordingType) {
+export function buildStoryboard(rec: RecordingType) {
   const toDo = (s: v.InferOutput<typeof Step>): Record<string, unknown> => {
     switch (s.action) {
       case 'pause':
@@ -478,8 +545,8 @@ function buildStoryboard(rec: RecordingType) {
     do: sc.do.map(toDo),
   }));
 
-  // Deterministic sign-in scene. The app redirects to /login until an API call
-  // succeeds, so we authenticate first and wait for the primary nav to appear.
+  // Deterministic sign-in scene. Wait for both the SPA navigation and the
+  // authenticated home shell instead of coupling this to a particular nav UI.
   const loginScene = {
     name: 'Sign in',
     do: [
@@ -488,7 +555,8 @@ function buildStoryboard(rec: RecordingType) {
       { fill: { into: 'input[type="password"]', text: REC_PASS } },
       { pause: 0.4 },
       { click: '.btn-login' },
-      { wait_for: 'nav.tabs' },
+      { wait_for_url: '**/' },
+      { wait_for: '.shell' },
       { pause: 0.6 },
     ],
   };
@@ -499,14 +567,20 @@ function buildStoryboard(rec: RecordingType) {
   const openScene =
     path === '/'
       ? []
-      : [{ name: `Open ${path}`, open: `${REC_BASE}${path}`, wait_for: 'nav.tabs', do: [{ pause: 0.6 }] }];
+      : [
+          {
+            name: `Open ${path}`,
+            open: `${REC_BASE}${path}`,
+            do: [{ wait_for_url: `**${path}` }, { pause: 0.6 }],
+          },
+        ];
 
   return {
     output: '/tmp/demo.webm',
     // shot-scraper launches this and waits for the port before recording.
     server: ['/tmp/expense-rec', 'serve', '--port', '8080', '--db', '/tmp/rec.db', '--config', '/tmp/rec-prefs.json', '--secret-file', '/tmp/rec-secret.json'],
     url: `${REC_BASE}/login`,
-    viewport: { width: 1280, height: 720 },
+    viewport: REC_VIEWPORT,
     cursor: true,
     wait_for: 'input[autocomplete="username"]',
     scenes: [loginScene, ...openScene, ...modelScenes],
