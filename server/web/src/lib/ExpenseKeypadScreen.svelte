@@ -256,6 +256,9 @@
 		position: fixed;
 		inset: 0;
 		height: 100dvh;
+		width: 100%;
+		max-width: 480px;
+		margin: 0 auto;
 		background: white;
 		display: flex;
 		flex-direction: column;
