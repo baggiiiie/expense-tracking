@@ -4,11 +4,11 @@ import { local } from '@flue/runtime/node';
 /**
  * issue-resolver
  *
- * A scoped coding assistant used by the `resolve-issue` workflow for the two
- * steps that actually need a model: triaging an issue (judgment) and editing
- * code to fix it. All deterministic plumbing — fetching the issue, running the
- * build/tests, committing, pushing, commenting, and closing — is done by the
- * workflow in code, not by this agent.
+ * A scoped coding assistant used by the `resolve-issue` workflow for the steps
+ * that need judgment: triaging an issue, editing code, and demonstrating a web
+ * fix in a live browser. All deterministic plumbing — fetching the issue,
+ * running build/tests, committing, pushing, recording media, commenting, and
+ * closing — is done by the workflow in code, not by this agent.
  *
  * It runs in the `local()` sandbox so its file-editing tools operate on the
  * checked-out repo on the runner.
@@ -23,9 +23,10 @@ export default createAgent(() => ({
     'triage an issue, classify it accurately and concisely. When asked to fix ' +
     'an issue, make the smallest correct code change using your file-editing ' +
     'tools, touching only what the issue requires. When asked to produce a ' +
-    'screen-recording storyboard for a web change, describe a short, focused ' +
-    'interaction routine using CSS selectors that exist in the components you ' +
-    'edited, and mark it not applicable when the change has no visible UI. ' +
+    'visual browser demo for a web change, inspect the live page with ' +
+    'agent-browser snapshots before interacting, prefer runtime refs and semantic ' +
+    'locators over guessed CSS, and mark it not applicable when the change has no ' +
+    'visible UI. ' +
     'Never run git, gh, push, commit, or close anything — the workflow ' +
     'orchestrates all of that.',
   sandbox: local({

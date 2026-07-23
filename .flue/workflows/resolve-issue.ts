@@ -5,8 +5,8 @@ import agent from '../agents/issue-resolver.ts';
 /**
  * resolve-issue workflow
  *
- * Orchestrates the pipeline in code and uses the agent only for the two parts
- * that actually need a model — judgment (triage) and code editing (fix):
+ * Orchestrates the pipeline in code and uses the agent for the parts that need
+ * judgment: triage, code editing, and live browser verification:
  *
  *   fetch issue            (code: gh)
  *   -> triage              (AGENT: classify + draft any comment)
@@ -14,14 +14,15 @@ import agent from '../agents/issue-resolver.ts';
  *   -> implement fix        (AGENT: edits files in the sandbox)
  *   -> verify               (code: go test for server, pnpm build for web)
  *   -> commit + push        (code: git/gh, direct to the default branch)
- *   -> record web demo      (shot-scraper video, visible web changes only)
+ *   -> record web demo      (agent-browser, visible web changes only)
  *   -> comment + close      (code: gh; visible web fixes require a recording)
  *
  * A valid, in-scope fix is pushed straight to the default branch (no PR) and
  * the issue is closed as completed — but only after verification passes. Each
  * touched area is verified with its own build; iOS changes need a macOS
- * simulator so they are the one area left for a human. If a fix can't be made
- * or verified, nothing is pushed and the issue stays open.
+ * simulator so they are the one area left for a human. A fix that fails code
+ * verification is not pushed; a pushed web fix that fails live browser
+ * verification leaves the issue open.
  *
  * Payload: { "issueNumber": 42 } resolves one issue.
  * Add "dryRun": true to triage only (no edits, push, or close).
@@ -61,40 +62,24 @@ const REC_VIEWPORT = { width: 390, height: 844 } as const;
 const REC_USER = 'demo';
 const REC_PASS = 'demo-password';
 
-// A single interaction inside a scene. This mirrors shot-scraper's `do:` step
-// shapes but in a flat, easy-to-validate form; buildStoryboard converts it to
-// shot-scraper's single-key map form.
-const Step = v.variant('action', [
-  v.object({ action: v.literal('pause'), seconds: v.number() }),
-  v.object({ action: v.literal('click'), selector: v.string() }),
-  v.object({ action: v.literal('wait_for'), selector: v.string() }),
-  v.object({ action: v.literal('wait_for_url'), url: v.string() }),
-  v.object({ action: v.literal('fill'), selector: v.string(), text: v.string() }),
-]);
-
-const Scene = v.object({
-  name: v.string(),
-  // Path to navigate to at the start of the scene (relative, e.g. "/settings").
-  open: v.optional(v.string()),
-  waitFor: v.optional(v.string()),
-  do: v.array(Step),
-});
-
-// The model's proposed screen-recording routine. The workflow owns the
-// sensitive storyboard keys (server argv, url, output, viewport); the model
-// only describes the interactions.
-const Recording = v.object({
+// The agent first classifies whether the change is visible and chooses a safe
+// same-origin route. Once the workflow has opened that route, the agent uses a
+// live agent-browser snapshot to inspect and demonstrate the change.
+const RecordingIntent = v.object({
   applicable: v.boolean(),
   reason: v.string(),
-  // Starting path, e.g. "/". The workflow signs in and navigates here first.
   path: v.string(),
-  scenes: v.array(Scene),
 });
-type RecordingType = v.InferOutput<typeof Recording>;
+
+const RecordingOutcome = v.object({
+  demonstrated: v.boolean(),
+  note: v.string(),
+});
 
 type DemoResult = {
   applicable: boolean;
   recorded: boolean;
+  screenshotUrl?: string;
   gifUrl?: string;
   mp4Url?: string;
   note: string;
@@ -122,6 +107,7 @@ const Result = v.object({
     v.object({
       applicable: v.boolean(),
       recorded: v.boolean(),
+      screenshotUrl: v.optional(v.string()),
       gifUrl: v.optional(v.string()),
       mp4Url: v.optional(v.string()),
       note: v.string(),
@@ -348,6 +334,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
         demo: {
           applicable: demo.applicable,
           recorded: demo.recorded,
+          screenshotUrl: demo.screenshotUrl,
           gifUrl: demo.gifUrl,
           mp4Url: demo.mp4Url,
           note: demo.note,
@@ -357,6 +344,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
     }
     if (demo.recorded) {
       mediaSection = `\n\n**Verified in-browser:**`;
+      if (demo.screenshotUrl) mediaSection += `\n\n![screenshot](${demo.screenshotUrl})`;
       if (demo.gifUrl) mediaSection += `\n\n![demo](${demo.gifUrl})`;
       if (demo.mp4Url) mediaSection += `\n\n[Full-resolution recording](${demo.mp4Url})`;
     }
@@ -373,6 +361,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
     demo: demo && {
       applicable: demo.applicable,
       recorded: demo.recorded,
+      screenshotUrl: demo.screenshotUrl,
       gifUrl: demo.gifUrl,
       mp4Url: demo.mp4Url,
       note: demo.note,
@@ -382,17 +371,10 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
 }
 
 /**
- * recordWebDemo — screen recording of the web app demonstrating the
- * fix, published to the orphan `bot-media` branch and returned as inline media.
- *
- * Production-like: it builds the `expense` binary (which embeds the built web
- * dist and serves both the SPA and the /api on :8080, exactly like a real
- * deployment) and lets shot-scraper launch it against a throwaway SQLite DB.
- *
- * The model supplies only the interaction routine (validated structured
- * steps); the workflow owns the sensitive storyboard keys. Any failure returns
- * a non-recorded result so the caller can leave visible web fixes open for
- * verification.
+ * Record a production-like web demo with agent-browser. The workflow owns the
+ * server, login, viewport, recording, screenshot, and cleanup. The agent only
+ * decides whether the change is visible, then inspects and operates the live
+ * page using accessibility snapshots and runtime refs.
  */
 type ShellResult = { exitCode: number; stdout: string; stderr: string };
 type RecordDeps = {
@@ -403,129 +385,181 @@ type RecordDeps = {
   title: string;
 };
 
-async function recordWebDemo(
-  deps: RecordDeps,
-): Promise<DemoResult> {
+async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
   const { harness, sh, session, n, title } = deps;
 
-  // 1. Ask the agent (which just wrote the fix, so it has full context) for a
-  //    short storyboard demonstrating the change.
-  const { data: rec } = await session.prompt(
-    `Produce a short screen-recording routine that demonstrates the fix you just ` +
-      `made for issue #${n} ("${title}") in the web app. The workflow already ` +
-      `signs in and navigates to your \`path\` for you, so assume the app is ` +
-      `authenticated — do NOT include any login steps. Set \`path\` to the route ` +
-      `your demo starts on and set each scene's \`waitFor\` to a stable, unique ` +
-      `selector for the feature that scene demonstrates. The recording viewport ` +
-      `is an iPhone-sized ${REC_VIEWPORT.width}x${REC_VIEWPORT.height} portrait display. ` +
-      `The app has a few demo expenses seeded across the default categories, so ` +
-      `lists are non-empty. Use CSS selectors that exist in the components you ` +
-      `edited; any \`wait_for\` selector must match exactly one element ` +
-      `(Playwright strict mode fails on multiple matches). Keep it under ~25 ` +
-      `seconds and focused on the changed behaviour: exercise the feature and ` +
-      `pause briefly so it is visible. Set applicable=false (empty scenes) if the ` +
-      `change has no visible UI (e.g. build config, types, tests). Do not run any ` +
-      `commands.`,
-    { result: Recording },
+  const { data: intent } = await session.prompt(
+    `Decide whether the fix you just made for issue #${n} ("${title}") has a ` +
+      `visible web UI result. If it does, return the same-origin route where it ` +
+      `can be demonstrated (for example, "/" or "/settings"). Do not run any ` +
+      `commands yet. Set applicable=false for changes with no visible web UI.`,
+    { result: RecordingIntent },
   );
-  if (!rec.applicable) {
-    return { applicable: false, recorded: false, note: `not applicable: ${rec.reason}` };
-  }
-  if (rec.scenes.length === 0) {
-    return {
-      applicable: true,
-      recorded: false,
-      note: 'recording storyboard contained no scenes',
-    };
+  if (!intent.applicable) {
+    return { applicable: false, recorded: false, note: `not applicable: ${intent.reason}` };
   }
 
-  // 2. Build the production-like server binary (embeds the web dist).
   const build = await sh(`cd server && go build -o /tmp/expense-rec ./cmd/expense`);
   if (build.exitCode !== 0) {
     return {
       applicable: true,
       recorded: false,
-      note: `server build failed: ${build.stderr.slice(-300).trim()}`,
+      note: `server build failed: ${commandError(build)}`,
     };
   }
 
-  // 3. Seed a small, recent demo dataset so lists aren't empty. The server
-  //    uses embedded SQLite (no external DB service); it auto-creates and
-  //    migrates the throwaway file and seeds default categories, but has no
-  //    expenses. Dates are within the current month so they fall inside the
-  //    app's default "this month" view. Best-effort: a seed failure just means
-  //    we record against whatever state exists.
-  await sh(`rm -f /tmp/rec.db* /tmp/rec-prefs.json /tmp/rec-secret.json /tmp/demo.webm`);
+  // Seed recent expenses and require success: the agent must inspect a known,
+  // deterministic UI state rather than trying to explain an empty page.
+  await sh(
+    `rm -f /tmp/rec.db* /tmp/rec-prefs.json /tmp/rec-secret.json ` +
+      `/tmp/demo.webm /tmp/issue-${n}.png /tmp/issue-${n}.gif /tmp/issue-${n}.mp4`,
+  );
   const now = new Date();
-  const pad = (x: number) => String(x).padStart(2, '0');
-  const iso = (day: number) => `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(day)}`;
-  const today = iso(now.getUTCDate());
-  const earlier = iso(Math.max(1, now.getUTCDate() - 1));
+  const earlierDate = new Date(now);
+  earlierDate.setUTCDate(now.getUTCDate() - 1);
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
   const seed = [
-    { amount: 4.5, category: 'Food & Dining', merchant: 'Blue Bottle', date: today },
-    { amount: 12.99, category: 'Entertainment', merchant: 'Netflix', date: today },
-    { amount: 62.1, category: 'Groceries', merchant: 'Whole Foods', date: earlier },
-    { amount: 18.0, category: 'Transport', merchant: 'Uber', date: earlier },
+    { amount: 4.5, category: 'Food & Dining', merchant: 'Blue Bottle', date: iso(now) },
+    { amount: 12.99, category: 'Entertainment', merchant: 'Netflix', date: iso(now) },
+    { amount: 62.1, category: 'Groceries', merchant: 'Whole Foods', date: iso(earlierDate) },
+    { amount: 18.0, category: 'Transport', merchant: 'Uber', date: iso(earlierDate) },
   ];
   await harness.fs.writeFile('/tmp/seed.json', JSON.stringify(seed));
-  await sh(
+  const seeded = await sh(
     `/tmp/expense-rec add --db /tmp/rec.db --config /tmp/rec-prefs.json --json @/tmp/seed.json`,
   );
-
-  // 4. Assemble the storyboard (workflow owns server/url/output/viewport).
-  const storyboard = buildStoryboard(rec);
-  await harness.fs.writeFile('/tmp/storyboard.yml', JSON.stringify(storyboard, null, 2));
-
-  // 5. Record. shot-scraper launches the server against the pre-seeded DB,
-  //    inheriting the demo login credentials from this command's env. Note we
-  //    do NOT wipe /tmp/rec.db* here — that would drop the seed.
-  const shot = await sh(
-    `LOGIN_USERNAME=${REC_USER} LOGIN_PASSWORD=${REC_PASS} ` +
-      `shot-scraper video /tmp/storyboard.yml`,
-  );
-  if (shot.exitCode !== 0) {
-    return {
-      applicable: true,
-      recorded: false,
-      note: `shot-scraper failed: ${shot.stderr.slice(-300).trim()}`,
-    };
+  if (seeded.exitCode !== 0) {
+    return { applicable: true, recorded: false, note: `demo seed failed: ${commandError(seeded)}` };
   }
 
-  // 6. Convert to an inline GIF (renders in the comment) and a full-res MP4.
-  const gif = await sh(
-    `ffmpeg -y -i /tmp/demo.webm -vf ` +
-      `"fps=12,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ` +
-      `/tmp/issue-${n}.gif`,
-  );
-  const mp4 = await sh(
-    `ffmpeg -y -i /tmp/demo.webm -movflags +faststart -pix_fmt yuv420p /tmp/issue-${n}.mp4`,
-  );
-  const haveGif = gif.exitCode === 0;
-  const haveMp4 = mp4.exitCode === 0;
-  if (!haveGif && !haveMp4) {
-    return { applicable: true, recorded: false, note: 'ffmpeg produced no output' };
-  }
-
-  // 7. Publish to the orphan bot-media branch (per-issue files, overwritten on
-  //    re-runs; other issues' media is preserved).
-  const slug = (await sh(`gh repo view --json nameWithOwner --jq .nameWithOwner`)).stdout.trim();
-  const pub = await publishMedia(sh, n, haveGif, haveMp4);
-  if (pub.exitCode !== 0) {
-    return {
-      applicable: true,
-      recorded: false,
-      note: `publish failed: ${pub.stderr.slice(-300).trim()}`,
-    };
-  }
-
-  const rawBase = `https://raw.githubusercontent.com/${slug}/bot-media`;
-  return {
-    applicable: true,
-    recorded: true,
-    gifUrl: haveGif ? `${rawBase}/issue-${n}.gif` : undefined,
-    mp4Url: haveMp4 ? `${rawBase}/issue-${n}.mp4` : undefined,
-    note: 'recorded',
+  const browserSession = `resolve-issue-${n}`;
+  const browser = `npx --no-install agent-browser --session ${shellQuote(browserSession)}`;
+  const runBrowser = async (args: string): Promise<ShellResult> => {
+    const result = await sh(`${browser} ${args}`);
+    if (result.exitCode !== 0) {
+      const safeArgs = args.replaceAll(REC_PASS, '[redacted]');
+      throw new Error(`agent-browser ${safeArgs} failed: ${commandError(result)}`);
+    }
+    return result;
   };
+
+  let serverStarted = false;
+  let recordingStarted = false;
+  try {
+    await sh(`${browser} close >/dev/null 2>&1 || true`);
+    const launched = await sh(
+      `nohup env LOGIN_USERNAME=${REC_USER} LOGIN_PASSWORD=${REC_PASS} ` +
+        `/tmp/expense-rec serve --port 8080 --db /tmp/rec.db ` +
+        `--config /tmp/rec-prefs.json --secret-file /tmp/rec-secret.json ` +
+        `>/tmp/expense-rec.log 2>&1 & echo $! >/tmp/expense-rec.pid`,
+    );
+    if (launched.exitCode !== 0) throw new Error(`server launch failed: ${commandError(launched)}`);
+    serverStarted = true;
+
+    const ready = await sh(
+      `for attempt in $(seq 1 50); do ` +
+        `curl -fsS ${REC_BASE}/login >/dev/null && exit 0; sleep 0.2; ` +
+        `done; tail -50 /tmp/expense-rec.log >&2; exit 1`,
+    );
+    if (ready.exitCode !== 0) throw new Error(`recording server did not become ready`);
+
+    await runBrowser(`open about:blank`);
+    await runBrowser(`set viewport ${REC_VIEWPORT.width} ${REC_VIEWPORT.height}`);
+    await runBrowser(`open ${shellQuote(`${REC_BASE}/login`)}`);
+    await runBrowser(`wait ${shellQuote('input[autocomplete="username"]')}`);
+    await runBrowser(`fill ${shellQuote('input[autocomplete="username"]')} ${shellQuote(REC_USER)}`);
+    await runBrowser(`fill ${shellQuote('input[type="password"]')} ${shellQuote(REC_PASS)}`);
+    await runBrowser(`click ${shellQuote('.btn-login')}`);
+    await runBrowser(`wait --url ${shellQuote('**/')}`);
+    await runBrowser(`wait ${shellQuote('.shell')}`);
+
+    const targetUrl = demoUrl(intent.path);
+    if (targetUrl !== `${REC_BASE}/`) {
+      await runBrowser(`open ${shellQuote(targetUrl)}`);
+      await runBrowser(`wait --load domcontentloaded`);
+    }
+
+    await runBrowser(`record start ${shellQuote('/tmp/demo.webm')}`);
+    recordingStarted = true;
+
+    const { data: outcome } = await session.prompt(
+      `Use the live browser to demonstrate the visible fix for issue #${n}. ` +
+        `The authenticated app is open at ${targetUrl} in agent-browser session ` +
+        `"${browserSession}" with recording already active. Run agent-browser ` +
+        `commands through your shell using exactly this prefix: ` +
+        `\`npx --no-install agent-browser --session ${browserSession}\`. Start by ` +
+        `running \`snapshot -c\` so you inspect the rendered page before choosing ` +
+        `targets. Prefer snapshot refs and semantic find commands over guessed CSS, ` +
+        `and re-snapshot after page changes. Exercise only the changed behavior, ` +
+        `keep the final visible state on screen, and run \`wait 1000\` so a human ` +
+        `can see it. Do not start or stop recording, take screenshots, close the ` +
+        `browser, run git/gh, or edit files. Return demonstrated=true only after ` +
+        `you observed the expected result in the live page.`,
+      { result: RecordingOutcome },
+    );
+
+    await runBrowser(`screenshot ${shellQuote(`/tmp/issue-${n}.png`)}`);
+    await runBrowser(`record stop`);
+    recordingStarted = false;
+
+    if (!outcome.demonstrated) {
+      return {
+        applicable: true,
+        recorded: false,
+        note: `agent could not demonstrate the change: ${outcome.note}`,
+      };
+    }
+
+    const artifacts = await sh(
+      `test -s /tmp/demo.webm && test -s /tmp/issue-${n}.png`,
+    );
+    if (artifacts.exitCode !== 0) {
+      return { applicable: true, recorded: false, note: 'agent-browser produced no media' };
+    }
+
+    const gif = await sh(
+      `ffmpeg -y -i /tmp/demo.webm -vf ` +
+        `"fps=10,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" ` +
+        `/tmp/issue-${n}.gif`,
+    );
+    const mp4 = await sh(
+      `ffmpeg -y -i /tmp/demo.webm -movflags +faststart -pix_fmt yuv420p ` +
+        `/tmp/issue-${n}.mp4`,
+    );
+    const haveGif = gif.exitCode === 0;
+    const haveMp4 = mp4.exitCode === 0;
+    if (!haveGif && !haveMp4) {
+      return { applicable: true, recorded: false, note: 'ffmpeg produced no converted video' };
+    }
+
+    const slug = (await sh(`gh repo view --json nameWithOwner --jq .nameWithOwner`)).stdout.trim();
+    const pub = await publishMedia(sh, n, true, haveGif, haveMp4);
+    if (pub.exitCode !== 0) {
+      return {
+        applicable: true,
+        recorded: false,
+        note: `publish failed: ${commandError(pub)}`,
+      };
+    }
+
+    const rawBase = `https://raw.githubusercontent.com/${slug}/bot-media`;
+    return {
+      applicable: true,
+      recorded: true,
+      screenshotUrl: `${rawBase}/issue-${n}.png`,
+      gifUrl: haveGif ? `${rawBase}/issue-${n}.gif` : undefined,
+      mp4Url: haveMp4 ? `${rawBase}/issue-${n}.mp4` : undefined,
+      note: outcome.note || 'recorded with agent-browser',
+    };
+  } catch (error) {
+    return { applicable: true, recorded: false, note: String(error) };
+  } finally {
+    if (recordingStarted) await sh(`${browser} record stop >/dev/null 2>&1 || true`);
+    await sh(`${browser} close >/dev/null 2>&1 || true`);
+    if (serverStarted) {
+      await sh(`kill $(cat /tmp/expense-rec.pid) >/dev/null 2>&1 || true`);
+    }
+  }
 }
 
 /** Build a descriptive commit subject without triggering GitHub auto-close. */
@@ -533,69 +567,22 @@ export function buildCommitMessage(issueNumber: number, summary: string): string
   return `Address issue #${issueNumber}: ${summary}\n`;
 }
 
-/** Convert the validated Recording into a shot-scraper storyboard object. */
-export function buildStoryboard(rec: RecordingType) {
-  const toDo = (s: v.InferOutput<typeof Step>): Record<string, unknown> => {
-    switch (s.action) {
-      case 'pause':
-        return { pause: s.seconds };
-      case 'click':
-        return { click: s.selector };
-      case 'wait_for':
-        return { wait_for: s.selector };
-      case 'wait_for_url':
-        return { wait_for_url: s.url };
-      case 'fill':
-        return { fill: { into: s.selector, text: s.text } };
-    }
-  };
-  const modelScenes = rec.scenes.map((sc) => ({
-    name: sc.name,
-    ...(sc.open ? { open: `${REC_BASE}${sc.open}` } : {}),
-    ...(sc.waitFor ? { wait_for: sc.waitFor } : {}),
-    do: sc.do.map(toDo),
-  }));
+/** Resolve an agent-provided path to the local recording origin. */
+export function demoUrl(path: string): string {
+  try {
+    const url = new URL(path || '/', REC_BASE);
+    return url.origin === new URL(REC_BASE).origin ? url.href : `${REC_BASE}/`;
+  } catch {
+    return `${REC_BASE}/`;
+  }
+}
 
-  // Deterministic sign-in scene. Wait for both the SPA navigation and the
-  // authenticated home shell instead of coupling this to a particular nav UI.
-  const loginScene = {
-    name: 'Sign in',
-    do: [
-      { pause: 0.6 },
-      { fill: { into: 'input[autocomplete="username"]', text: REC_USER } },
-      { fill: { into: 'input[type="password"]', text: REC_PASS } },
-      { pause: 0.4 },
-      { click: '.btn-login' },
-      { wait_for_url: '**/' },
-      { wait_for: '.shell' },
-      { pause: 0.6 },
-    ],
-  };
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
 
-  // After login we land on '/'. If the model wants a different starting path,
-  // navigate there (still deterministic) before its scenes run.
-  const path = rec.path || '/';
-  const openScene =
-    path === '/'
-      ? []
-      : [
-          {
-            name: `Open ${path}`,
-            open: `${REC_BASE}${path}`,
-            do: [{ wait_for_url: `**${path}` }, { pause: 0.6 }],
-          },
-        ];
-
-  return {
-    output: '/tmp/demo.webm',
-    // shot-scraper launches this and waits for the port before recording.
-    server: ['/tmp/expense-rec', 'serve', '--port', '8080', '--db', '/tmp/rec.db', '--config', '/tmp/rec-prefs.json', '--secret-file', '/tmp/rec-secret.json'],
-    url: `${REC_BASE}/login`,
-    viewport: REC_VIEWPORT,
-    cursor: true,
-    wait_for: 'input[autocomplete="username"]',
-    scenes: [loginScene, ...openScene, ...modelScenes],
-  };
+function commandError(result: ShellResult): string {
+  return (result.stderr || result.stdout).slice(-500).trim() || `exit ${result.exitCode}`;
 }
 
 /**
@@ -606,10 +593,12 @@ export function buildStoryboard(rec: RecordingType) {
 async function publishMedia(
   sh: (command: string) => Promise<ShellResult>,
   n: number,
+  haveScreenshot: boolean,
   haveGif: boolean,
   haveMp4: boolean,
 ): Promise<ShellResult> {
   const copy = [
+    haveScreenshot ? `cp /tmp/issue-${n}.png /tmp/botmedia/` : '',
     haveGif ? `cp /tmp/issue-${n}.gif /tmp/botmedia/` : '',
     haveMp4 ? `cp /tmp/issue-${n}.mp4 /tmp/botmedia/` : '',
   ]

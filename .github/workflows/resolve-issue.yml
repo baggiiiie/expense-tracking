@@ -36,19 +36,20 @@ jobs:
           version: 9
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - uses: actions/setup-go@v6
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - run: npm ci
-      - name: Set up shot-scraper (screen recording)
-        # shot-scraper 1.10 records web-app demos via Playwright. Visible web
-        # fixes require visual verification; a recording failure
+      - name: Set up agent-browser (visual verification)
+        # agent-browser drives its own headless Chrome and records WebM through
+        # CDP. Visible web fixes require a screenshot and recording; a failure
         # leaves the issue open. ffmpeg (webm -> gif/mp4) is preinstalled.
         run: |
-          pipx install shot-scraper==1.10
-          shot-scraper install
+          npx --no-install agent-browser install --with-deps
+          command -v ffmpeg
+          npx --no-install agent-browser doctor --offline
       - name: Resolve issue
         env:
           # gh/git auth for the agent's tools.
