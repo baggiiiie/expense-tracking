@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildStoryboard } from './resolve-issue.ts';
+import { buildStoryboard } from '../workflows/resolve-issue.ts';
 
 const scene = {
   name: 'Show the fix',
