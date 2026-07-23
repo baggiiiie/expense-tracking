@@ -43,7 +43,7 @@ export function parseAmount(input: string | number): number | null {
 
 export function formatDate(unixSeconds: number): string {
 	const d = new Date(unixSeconds * 1000);
-	return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function formatDateTime(unixSeconds: number): string {
