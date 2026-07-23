@@ -306,7 +306,13 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   const branchRef = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
   const defaultBranch = (branchRef.exitCode === 0 && branchRef.stdout.trim()) || 'master';
 
-  await harness.fs.writeFile('/tmp/resolve-issue-commit.txt', `Fix #${n}: ${fix.summary}\n`);
+  // Do not use GitHub closing keywords (for example, `Fix #123`) here. The
+  // change is pushed before visual verification, so auto-closing would bypass
+  // the explicit close below when recording fails.
+  await harness.fs.writeFile(
+    '/tmp/resolve-issue-commit.txt',
+    buildCommitMessage(n, fix.summary),
+  );
   await sh(`git add -A`);
   const commit = await sh(`git commit -F /tmp/resolve-issue-commit.txt`);
   if (commit.exitCode !== 0) throw new Error(`git commit failed: ${commit.stderr.trim()}`);
@@ -520,6 +526,11 @@ async function recordWebDemo(
     mp4Url: haveMp4 ? `${rawBase}/issue-${n}.mp4` : undefined,
     note: 'recorded',
   };
+}
+
+/** Build a descriptive commit subject without triggering GitHub auto-close. */
+export function buildCommitMessage(issueNumber: number, summary: string): string {
+  return `Address issue #${issueNumber}: ${summary}\n`;
 }
 
 /** Convert the validated Recording into a shot-scraper storyboard object. */
