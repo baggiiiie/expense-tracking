@@ -60,6 +60,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # bedrock-mantle provider (Anthropic Messages protocol).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Ubuntu 24.04 hosted runners block Chromium's user-namespace sandbox
+          # with AppArmor. This job is ephemeral and only records the local,
+          # throwaway demo server, so disable Chromium's sandbox for this step.
+          AGENT_BROWSER_ARGS: --no-sandbox
         run: |
           ISSUE="${{ github.event_name == 'workflow_dispatch' && inputs.issueNumber || github.event.issue.number }}"
           DRY="${{ github.event_name == 'workflow_dispatch' && inputs.dryRun || 'false' }}"
