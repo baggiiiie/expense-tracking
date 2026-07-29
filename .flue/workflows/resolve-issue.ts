@@ -461,7 +461,13 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
   }
 
   const browserSession = `resolve-issue-${n}`;
-  const browser = `npx --no-install agent-browser --session ${shellQuote(browserSession)}`;
+  // agent-browser 0.32.4 does not reliably forward AGENT_BROWSER_ARGS to the
+  // daemon on GitHub-hosted runners, so also pass configured launch arguments
+  // explicitly on every command that can create or connect to the session.
+  const browserArgs = process.env.AGENT_BROWSER_ARGS;
+  const browser =
+    `npx --no-install agent-browser --session ${shellQuote(browserSession)}` +
+    (browserArgs ? ` --args ${shellQuote(browserArgs)}` : '');
   const runBrowser = async (args: string): Promise<ShellResult> => {
     const result = await sh(`${browser} ${args}`);
     if (result.exitCode !== 0) {
@@ -515,7 +521,7 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
         `The authenticated app is open at ${targetUrl} in agent-browser session ` +
         `"${browserSession}" with recording already active. Run agent-browser ` +
         `commands through your shell using exactly this prefix: ` +
-        `\`npx --no-install agent-browser --session ${browserSession}\`. Start by ` +
+        `\`${browser}\`. Start by ` +
         `running \`snapshot -c\` so you inspect the rendered page before choosing ` +
         `targets. Prefer snapshot refs and semantic find commands over guessed CSS, ` +
         `and re-snapshot after page changes. Exercise only the changed behavior, ` +
