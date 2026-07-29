@@ -267,6 +267,17 @@
 		padding: 12px 14px;
 		padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
 		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+		/* Prevent text selection and double-tap-to-zoom, which caused the
+		   layout to jump up/down when tapping or double-tapping keypad keys. */
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+		touch-action: manipulation;
+	}
+
+	.expense-screen input {
+		user-select: text;
+		-webkit-user-select: text;
 	}
 
 	.top-bar {
