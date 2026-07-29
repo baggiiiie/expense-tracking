@@ -13,16 +13,15 @@ import agent from '../agents/issue-resolver.ts';
  *   -> close if not fixable (code: gh)
  *   -> implement fix        (AGENT: edits files in the sandbox)
  *   -> verify               (code: go test for server, pnpm build for web)
- *   -> commit + push        (code: git/gh, direct to the default branch)
  *   -> record web demo      (agent-browser, visible web changes only)
+ *   -> commit + push        (code: git/gh, direct to the default branch)
  *   -> comment + close      (code: gh; visible web fixes require a recording)
  *
  * A valid, in-scope fix is pushed straight to the default branch (no PR) and
  * the issue is closed as completed — but only after verification passes. Each
  * touched area is verified with its own build; iOS changes need a macOS
  * simulator so they are the one area left for a human. A fix that fails code
- * verification is not pushed; a pushed web fix that fails live browser
- * verification leaves the issue open.
+ * or live browser verification is not pushed.
  *
  * Payload: { "issueNumber": 42 } resolves one issue.
  * Add "dryRun": true to triage only (no edits, push, or close).
@@ -248,12 +247,12 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   if (changed.some(isGoServer)) verifyCmds.push('cd server && go build ./... && go test ./...');
   if (changed.some(isWeb)) verifyCmds.push('cd server/web && pnpm install --frozen-lockfile && pnpm build');
 
-  const runVerify = async () => {
-    for (const cmd of verifyCmds) {
+  const runVerify = async (commands = verifyCmds) => {
+    for (const cmd of commands) {
       const r = await sh(cmd);
       if (r.exitCode !== 0) return { passed: false, cmd, stderr: r.stderr };
     }
-    return { passed: true, cmd: verifyCmds.join(' && ') || 'none', stderr: '' };
+    return { passed: true, cmd: commands.join(' && ') || 'none', stderr: '' };
   };
 
   let verify = await runVerify();
@@ -267,7 +266,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   }
 
   const verifiedLabel = verifyCmds.length ? verifyCmds.join(' ; ') : 'no build required (docs/config only)';
-  const verification = {
+  let verification = {
     ran: verifyCmds.length > 0,
     passed: verify.passed,
     details: verify.passed ? `verification passed: ${verifiedLabel}` : `failed: ${verify.stderr.slice(-500).trim()}`,
@@ -285,35 +284,46 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
     };
   }
 
-  // Final guard: a retry could have introduced iOS changes we cannot verify.
-  if ((await changedFiles(harness)).some(isIOS)) return iosLeftForHuman();
+  // Final guard: a retry could have changed the set of touched areas.
+  const finalChanged = await changedFiles(harness);
+  if (finalChanged.some(isIOS)) return iosLeftForHuman();
 
-  // 6. Commit, push to the default branch, comment, and close (deterministic).
-  const branchRef = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
-  const defaultBranch = (branchRef.exitCode === 0 && branchRef.stdout.trim()) || 'master';
+  // Rebuild the command list from the final files because a retry may have
+  // introduced another area after the original verification plan was made.
+  const finalVerifyCmds: string[] = [];
+  if (finalChanged.some(isGoServer)) finalVerifyCmds.push('cd server && go build ./... && go test ./...');
+  if (finalChanged.some(isWeb)) finalVerifyCmds.push('cd server/web && pnpm install --frozen-lockfile && pnpm build');
+  const finalVerify = await runVerify(finalVerifyCmds);
+  const finalVerifiedLabel = finalVerifyCmds.length
+    ? finalVerifyCmds.join(' ; ')
+    : 'no build required (docs/config only)';
+  verification = {
+    ran: finalVerifyCmds.length > 0,
+    passed: finalVerify.passed,
+    details: finalVerify.passed
+      ? `verification passed: ${finalVerifiedLabel}`
+      : `failed: ${finalVerify.stderr.slice(-500).trim()}`,
+  };
+  if (!finalVerify.passed) {
+    await sh(`git checkout -- . 2>/dev/null; git clean -fd 2>/dev/null`);
+    await comment(
+      `A fix was attempted but final verification (\`${finalVerify.cmd}\`) did not pass, ` +
+        `so nothing was pushed. Leaving open.`,
+    );
+    return {
+      issue: n,
+      triage: triageOut,
+      fix: { attempted: true, applied: false, summary: fix.summary },
+      verification,
+      closed: false,
+    };
+  }
 
-  // Do not use GitHub closing keywords (for example, `Fix #123`) here. The
-  // change is pushed before visual verification, so auto-closing would bypass
-  // the explicit close below when recording fails.
-  await harness.fs.writeFile(
-    '/tmp/resolve-issue-commit.txt',
-    buildCommitMessage(n, fix.summary),
-  );
-  await sh(`git add -A`);
-  const commit = await sh(`git commit -F /tmp/resolve-issue-commit.txt`);
-  if (commit.exitCode !== 0) throw new Error(`git commit failed: ${commit.stderr.trim()}`);
-
-  const sha = (await sh(`git rev-parse --short HEAD`)).stdout.trim();
-
-  const push = await sh(`git push origin HEAD:${defaultBranch}`);
-  if (push.exitCode !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
-
-  // 7. Record visible web changes. The fix has already landed, but an issue
-  // with a visible change stays open if the recording fails so the missing
-  // visual verification cannot be mistaken for success.
+  // 6. Record visible web changes before committing or pushing. A web fix must
+  // produce visual proof successfully or no source change lands.
   let demo: DemoResult | undefined;
   let mediaSection = '';
-  if (changed.some(isWeb)) {
+  if (finalChanged.some(isWeb)) {
     demo = await recordWebDemo({ harness, sh, session, n, title: issue.title }).catch(
       (err: unknown): DemoResult => ({
         applicable: true,
@@ -322,14 +332,15 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
       }),
     );
     if (demo.applicable && !demo.recorded) {
+      await sh(`git checkout -- . 2>/dev/null; git clean -fd 2>/dev/null`);
       await comment(
-        `Fixed in ${sha} on \`${defaultBranch}\`, but screen recording failed: ` +
-          `\`${demo.note}\`. Leaving open for visual verification.`,
+        `A fix passed code verification, but screen recording failed: ` +
+          `\`${demo.note}\`. Nothing was pushed; leaving open for visual verification.`,
       );
       return {
         issue: n,
         triage: triageOut,
-        fix: { attempted: true, applied: true, commitSha: sha, summary: fix.summary },
+        fix: { attempted: true, applied: false, summary: fix.summary },
         verification,
         demo: {
           applicable: demo.applicable,
@@ -349,6 +360,23 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
       if (demo.mp4Url) mediaSection += `\n\n[Full-resolution recording](${demo.mp4Url})`;
     }
   }
+
+  // 7. Commit and push only after all required verification has passed.
+  const branchRef = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
+  const defaultBranch = (branchRef.exitCode === 0 && branchRef.stdout.trim()) || 'master';
+
+  await harness.fs.writeFile(
+    '/tmp/resolve-issue-commit.txt',
+    buildCommitMessage(n, fix.summary),
+  );
+  await sh(`git add -A`);
+  const commit = await sh(`git commit -F /tmp/resolve-issue-commit.txt`);
+  if (commit.exitCode !== 0) throw new Error(`git commit failed: ${commit.stderr.trim()}`);
+
+  const sha = (await sh(`git rev-parse --short HEAD`)).stdout.trim();
+
+  const push = await sh(`git push origin HEAD:${defaultBranch}`);
+  if (push.exitCode !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
 
   await comment(`Fixed in ${sha} on \`${defaultBranch}\`. Closing.${mediaSection}`);
   await sh(`gh issue close ${n} --reason completed`);

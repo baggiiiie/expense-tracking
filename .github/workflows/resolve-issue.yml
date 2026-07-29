@@ -21,7 +21,7 @@ jobs:
   resolve-issue:
     # Auto-run only for issues authored by baggiiiie; manual dispatch always runs.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.issue.user.login == 'baggiiiie' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write  # commit and push the fix to the default branch
@@ -37,6 +37,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
       - uses: actions/setup-go@v6
         with:
           go-version-file: server/go.mod
@@ -45,10 +46,13 @@ jobs:
       - name: Set up agent-browser (visual verification)
         # agent-browser drives its own headless Chrome and records WebM through
         # CDP. Visible web fixes require a screenshot and recording; a failure
-        # leaves the issue open. ffmpeg (webm -> gif/mp4) is preinstalled.
+        # leaves the issue open. Install ffmpeg explicitly rather than relying
+        # on the hosted runner image because it converts WebM to GIF/MP4.
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
           npx --no-install agent-browser install --with-deps
-          command -v ffmpeg
+          ffmpeg -version
           npx --no-install agent-browser doctor --offline
       - name: Resolve issue
         env:
@@ -61,6 +65,19 @@ jobs:
           DRY="${{ github.event_name == 'workflow_dispatch' && inputs.dryRun || 'false' }}"
           npx flue run resolve-issue --target node \
             --payload "{\"issueNumber\": ${ISSUE}, \"dryRun\": ${DRY}}"
+
+      - name: Upload visual verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-${{ github.event.issue.number || inputs.issueNumber }}-visual-proof
+          path: |
+            /tmp/demo.webm
+            /tmp/issue-*.png
+            /tmp/issue-*.gif
+            /tmp/issue-*.mp4
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Dispatch server image build
         if: ${{ success() && !(github.event_name == 'workflow_dispatch' && inputs.dryRun) }}
