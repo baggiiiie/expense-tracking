@@ -11,6 +11,7 @@
 		saveSyncSecret
 	} from '$lib/features/settings';
 	import { authState } from '$lib/stores';
+	import { checkForUpdate } from '$lib/sw-client';
 	import type { OutboxRecord } from '$lib/outbox';
 	import type { Preferences } from '$lib/types';
 	import { formatDateTime } from '$lib/util';
@@ -26,6 +27,24 @@
 	let prefsBusy = $state(false);
 
 	let failed = $state<OutboxRecord[]>([]);
+
+	let updateBusy = $state(false);
+	let updateMessage = $state('');
+
+	async function onCheckForUpdate() {
+		updateBusy = true;
+		updateMessage = '';
+		try {
+			const hasUpdate = await checkForUpdate();
+			updateMessage = hasUpdate
+				? 'Update available — reload to apply.'
+				: 'You’re on the latest version.';
+		} catch (e) {
+			updateMessage = e instanceof Error ? e.message : String(e);
+		} finally {
+			updateBusy = false;
+		}
+	}
 
 	async function loadPrefs() {
 		try {
@@ -207,6 +226,12 @@
 				<span>Commit</span>
 				<span class="about-value">{__COMMIT_MESSAGE__}</span>
 			</div>
+		{/if}
+		<button type="button" class="check-update" disabled={updateBusy} onclick={onCheckForUpdate}>
+			{updateBusy ? 'Checking…' : 'Check for Updates'}
+		</button>
+		{#if updateMessage}
+			<p class="msg" class:success={updateMessage.includes('latest') || updateMessage.includes('available')}>{updateMessage}</p>
 		{/if}
 	</div>
 </div>
@@ -407,6 +432,23 @@
 
 	.about-row:last-child {
 		border-bottom: none;
+	}
+
+	.check-update {
+		width: 100%;
+		margin: 12px 0;
+		padding: 12px;
+		border: none;
+		border-radius: 12px;
+		background: #1a1a1a;
+		color: white;
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.check-update:disabled {
+		opacity: 0.5;
 	}
 
 	.about-value {

@@ -16,6 +16,7 @@ const state = writable<UpdateState>({ available: false, apply: () => undefined }
 export const updateAvailable: Readable<UpdateState> = state;
 
 let registered = false;
+let currentRegistration: ServiceWorkerRegistration | null = null;
 
 export function registerServiceWorker(): void {
 	if (registered) return;
@@ -30,6 +31,7 @@ export function registerServiceWorker(): void {
 	void navigator.serviceWorker
 		.register(swUrl, { type: 'module', scope: '/' })
 		.then((registration) => {
+			currentRegistration = registration;
 			let reloading = false;
 			navigator.serviceWorker.addEventListener('controllerchange', () => {
 				if (reloading) return;
@@ -61,4 +63,14 @@ export function registerServiceWorker(): void {
 
 export function dismissUpdateBanner(): void {
 	state.set({ available: false, apply: () => undefined });
+}
+
+// Manually ask the browser to check for a new service worker. Resolves to
+// `true` if a newer version is waiting to be applied, `false` otherwise.
+export async function checkForUpdate(): Promise<boolean> {
+	if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return false;
+	const registration = currentRegistration ?? (await navigator.serviceWorker.getRegistration('/'));
+	if (!registration) return false;
+	await registration.update();
+	return Boolean(registration.waiting || registration.installing);
 }
