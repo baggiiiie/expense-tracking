@@ -5,16 +5,17 @@
   "type": "module",
   "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
   "scripts": {
-    "resolve-issue": "flue run resolve-issue --target node",
+    "resolve-issue": "flue run .flue/agents/issue-resolver.ts --message 'Resolve the configured issue.'",
     "test": "node --test .flue/tests/resolve-issue.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@flue/runtime": "latest",
+    "@earendil-works/pi-ai": "^0.83.0",
+    "@flue/runtime": "^2.0.2",
     "valibot": "latest"
   },
   "devDependencies": {
-    "@flue/cli": "latest",
+    "@flue/cli": "^2.0.2",
     "agent-browser": "0.32.4",
     "typescript": "latest"
   }

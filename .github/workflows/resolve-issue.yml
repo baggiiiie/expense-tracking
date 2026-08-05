@@ -67,8 +67,11 @@ jobs:
         run: |
           ISSUE="${{ github.event_name == 'workflow_dispatch' && inputs.issueNumber || github.event.issue.number }}"
           DRY="${{ github.event_name == 'workflow_dispatch' && inputs.dryRun || 'false' }}"
-          npx flue run resolve-issue --target node \
-            --payload "{\"issueNumber\": ${ISSUE}, \"dryRun\": ${DRY}}"
+          npx flue run .flue/agents/issue-resolver.ts \
+            --message "Resolve issue #${ISSUE}." \
+            --data "{\"issueNumber\": ${ISSUE}, \"dryRun\": ${DRY}}" \
+            --id "resolve-issue-${ISSUE}-${GITHUB_RUN_ID}" \
+            --new --json
 
       - name: Upload visual verification artifacts
         if: always()

@@ -1,6 +1,5 @@
-import { type FlueContext, type FlueHarness } from '@flue/runtime';
+import { type FlueHarness } from '@flue/runtime';
 import * as v from 'valibot';
-import agent from '../agents/issue-resolver.ts';
 
 /**
  * resolve-issue workflow
@@ -26,10 +25,12 @@ import agent from '../agents/issue-resolver.ts';
  * Payload: { "issueNumber": 42 } resolves one issue.
  * Add "dryRun": true to triage only (no edits, push, or close).
  */
-type Payload = {
-  issueNumber: number;
-  dryRun?: boolean;
-};
+export const PayloadSchema = v.object({
+  issueNumber: v.number(),
+  dryRun: v.optional(v.boolean()),
+});
+
+export type Payload = v.InferOutput<typeof PayloadSchema>;
 
 const PROTECTED_LABELS = ['keep-open', 'pinned', 'security', 'blocked', 'wip'];
 const MAX_FIX_ATTEMPTS = 3; // initial fix + up to 2 verification-driven retries
@@ -84,7 +85,7 @@ type DemoResult = {
   note: string;
 };
 
-const Result = v.object({
+export const Result = v.object({
   issue: v.number(),
   triage: v.object({
     valid: v.boolean(),
@@ -115,19 +116,19 @@ const Result = v.object({
   closed: v.boolean(),
 });
 
-type ResultType = v.InferOutput<typeof Result>;
+export type ResultType = v.InferOutput<typeof Result>;
 
-export async function run({ init, payload }: FlueContext<Payload>): Promise<ResultType> {
+export async function resolveIssue(
+  harness: FlueHarness,
+  payload: Payload,
+): Promise<ResultType> {
   const n = payload.issueNumber;
   const dryRun = payload.dryRun ?? false;
 
-  const harness = await init(agent);
-  const session = await harness.session();
-
-  const sh = (command: string) => harness.shell(command);
+  const sh = (command: string) => harness.sandbox.exec(command);
   const comment = async (body: string) => {
     if (dryRun) return;
-    await harness.fs.writeFile('/tmp/resolve-issue-comment.md', body);
+    await harness.sandbox.writeFile('/tmp/resolve-issue-comment.md', body);
     await sh(`gh issue comment ${n} --body-file /tmp/resolve-issue-comment.md`);
   };
 
@@ -159,7 +160,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   }
 
   // 2. Triage (AGENT — judgment only, over the issue JSON we already fetched).
-  const { data: triage } = await session.prompt(
+  const { data: triage } = await harness.prompt(
     `Triage GitHub issue #${n} for this repository. Classify it into exactly one ` +
       `category (bug, feature, invalid, duplicate, stale, unclear). For ` +
       `invalid/duplicate/stale/unclear, write a short, polite comment to post; ` +
@@ -195,7 +196,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   await sh(`git config user.name "issue-resolver[bot]"`);
   await sh(`git config user.email "issue-resolver@users.noreply.github.com"`);
 
-  const { data: fix } = await session.prompt(
+  const { data: fix } = await harness.prompt(
     `Implement the smallest correct fix for issue #${n}: "${issue.title}". Edit only ` +
       `the files the fix requires; do not refactor unrelated code. Use your file-editing ` +
       `tools — do NOT run git, gh, push, commit, or close anything; the workflow handles ` +
@@ -257,7 +258,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
 
   let verify = await runVerify();
   for (let attempt = 1; !verify.passed && attempt < MAX_FIX_ATTEMPTS; attempt++) {
-    await session.prompt(
+    await harness.prompt(
       `Verification failed running \`${verify.cmd}\`. Fix the code so it passes. ` +
         `Edit files only; do not run git/gh.\n\nSTDERR (tail):\n${verify.stderr.slice(-4000)}`,
       { result: Fix },
@@ -324,7 +325,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   let demo: DemoResult | undefined;
   let mediaSection = '';
   if (finalChanged.some(isWeb)) {
-    demo = await recordWebDemo({ harness, sh, session, n, title: issue.title }).catch(
+    demo = await recordWebDemo({ harness, sh, n, title: issue.title }).catch(
       (err: unknown): DemoResult => ({
         applicable: true,
         recorded: false,
@@ -365,7 +366,7 @@ export async function run({ init, payload }: FlueContext<Payload>): Promise<Resu
   const branchRef = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
   const defaultBranch = (branchRef.exitCode === 0 && branchRef.stdout.trim()) || 'master';
 
-  await harness.fs.writeFile(
+  await harness.sandbox.writeFile(
     '/tmp/resolve-issue-commit.txt',
     buildCommitMessage(n, fix.summary),
   );
@@ -408,15 +409,14 @@ type ShellResult = { exitCode: number; stdout: string; stderr: string };
 type RecordDeps = {
   harness: FlueHarness;
   sh: (command: string) => Promise<ShellResult>;
-  session: Awaited<ReturnType<FlueHarness['session']>>;
   n: number;
   title: string;
 };
 
 async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
-  const { harness, sh, session, n, title } = deps;
+  const { harness, sh, n, title } = deps;
 
-  const { data: intent } = await session.prompt(
+  const { data: intent } = await harness.prompt(
     `Decide whether the fix you just made for issue #${n} ("${title}") has a ` +
       `visible web UI result. If it does, return the same-origin route where it ` +
       `can be demonstrated (for example, "/" or "/settings"). Do not run any ` +
@@ -452,7 +452,7 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
     { amount: 62.1, category: 'Groceries', merchant: 'Whole Foods', date: iso(earlierDate) },
     { amount: 18.0, category: 'Transport', merchant: 'Uber', date: iso(earlierDate) },
   ];
-  await harness.fs.writeFile('/tmp/seed.json', JSON.stringify(seed));
+  await harness.sandbox.writeFile('/tmp/seed.json', JSON.stringify(seed));
   const seeded = await sh(
     `/tmp/expense-rec add --db /tmp/rec.db --config /tmp/rec-prefs.json --json @/tmp/seed.json`,
   );
@@ -516,7 +516,7 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
     await runBrowser(`record start ${shellQuote('/tmp/demo.webm')}`);
     recordingStarted = true;
 
-    const { data: outcome } = await session.prompt(
+    const { data: outcome } = await harness.prompt(
       `Use the live browser to demonstrate the visible fix for issue #${n}. ` +
         `The authenticated app is open at ${targetUrl} in agent-browser session ` +
         `"${browserSession}" with recording already active. Run agent-browser ` +
@@ -666,7 +666,7 @@ async function publishMedia(
 
 /** Files changed in the working tree, from `git status --porcelain` (deterministic). */
 async function changedFiles(harness: FlueHarness): Promise<string[]> {
-  const status = await harness.shell(`git status --porcelain`);
+  const status = await harness.sandbox.exec(`git status --porcelain`);
   return status.stdout
     .split('\n')
     .map((line) => line.slice(3).trim())
