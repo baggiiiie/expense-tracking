@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
   "scripts": {
+    "eval": "vitest run --config .flue/evals/vitest.config.ts",
     "resolve-issue": "flue run .flue/agents/issue-resolver.ts --message 'Resolve the configured issue.'",
     "test": "node --test .flue/tests/resolve-issue.test.ts",
     "typecheck": "tsc --noEmit"
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@flue/cli": "^2.0.2",
     "agent-browser": "0.32.4",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^4.1.10"
   }
 }

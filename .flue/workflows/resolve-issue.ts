@@ -118,9 +118,96 @@ export const Result = v.object({
 
 export type ResultType = v.InferOutput<typeof Result>;
 
+export type GitHubIssue = {
+  number: number;
+  title: string;
+  body: string;
+  labels?: { name: string }[];
+  comments?: unknown[];
+  state?: string;
+  updatedAt?: string;
+};
+
+type MediaInput = {
+  issueNumber: number;
+  screenshotPath?: string;
+  gifPath?: string;
+  mp4Path?: string;
+};
+
+type MediaUrls = {
+  screenshotUrl?: string;
+  gifUrl?: string;
+  mp4Url?: string;
+};
+
+export interface Github {
+  getIssue(number: number): Promise<GitHubIssue>;
+  getDefaultBranch(): Promise<string>;
+  comment(number: number, body: string): Promise<void>;
+  close(number: number, reason: 'completed' | 'not planned'): Promise<void>;
+  push(branch: string): Promise<void>;
+  publishMedia(input: MediaInput): Promise<MediaUrls>;
+}
+
+/** Real external integrations used by the production issue resolver. */
+export function createProdGithub(harness: FlueHarness): Github {
+  const sh = (command: string) => harness.sandbox.exec(command);
+  return {
+    async getIssue(number) {
+      const result = await sh(
+        `gh issue view ${number} --json number,title,body,labels,comments,state,updatedAt`,
+      );
+      if (result.exitCode !== 0) {
+        throw new Error(`gh issue view ${number} failed: ${result.stderr.trim()}`);
+      }
+      return JSON.parse(result.stdout) as GitHubIssue;
+    },
+    async getDefaultBranch() {
+      const result = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
+      return (result.exitCode === 0 && result.stdout.trim()) || 'master';
+    },
+    async comment(number, body) {
+      await harness.sandbox.writeFile('/tmp/resolve-issue-comment.md', body);
+      await sh(`gh issue comment ${number} --body-file /tmp/resolve-issue-comment.md`);
+    },
+    async close(number, reason) {
+      await sh(`gh issue close ${number} --reason ${shellQuote(reason)}`);
+    },
+    async push(branch) {
+      const result = await sh(`git push origin HEAD:${shellQuote(branch)}`);
+      if (result.exitCode !== 0) {
+        throw new Error(`git push failed: ${result.stderr.trim()}`);
+      }
+    },
+    async publishMedia(input) {
+      const slug = (await sh(`gh repo view --json nameWithOwner --jq .nameWithOwner`)).stdout.trim();
+      const published = await publishMedia(
+        sh,
+        input.issueNumber,
+        Boolean(input.screenshotPath),
+        Boolean(input.gifPath),
+        Boolean(input.mp4Path),
+      );
+      if (published.exitCode !== 0) {
+        throw new Error(`publish failed: ${commandError(published)}`);
+      }
+      const rawBase = `https://raw.githubusercontent.com/${slug}/bot-media`;
+      return {
+        screenshotUrl: input.screenshotPath
+          ? `${rawBase}/issue-${input.issueNumber}.png`
+          : undefined,
+        gifUrl: input.gifPath ? `${rawBase}/issue-${input.issueNumber}.gif` : undefined,
+        mp4Url: input.mp4Path ? `${rawBase}/issue-${input.issueNumber}.mp4` : undefined,
+      };
+    },
+  };
+}
+
 export async function resolveIssue(
   harness: FlueHarness,
   payload: Payload,
+  github: Github,
 ): Promise<ResultType> {
   const n = payload.issueNumber;
   const dryRun = payload.dryRun ?? false;
@@ -128,21 +215,12 @@ export async function resolveIssue(
   const sh = (command: string) => harness.sandbox.exec(command);
   const comment = async (body: string) => {
     if (dryRun) return;
-    await harness.sandbox.writeFile('/tmp/resolve-issue-comment.md', body);
-    await sh(`gh issue comment ${n} --body-file /tmp/resolve-issue-comment.md`);
+    await github.comment(n, body);
   };
 
   // 1. Fetch the issue (deterministic).
-  const view = await sh(
-    `gh issue view ${n} --json number,title,body,labels,comments,state,updatedAt`,
-  );
-  if (view.exitCode !== 0) {
-    throw new Error(`gh issue view ${n} failed: ${view.stderr.trim()}`);
-  }
-  const issue = JSON.parse(view.stdout) as {
-    title: string;
-    labels?: { name: string }[];
-  };
+  const issue = await github.getIssue(n);
+  const issueJson = JSON.stringify(issue);
   const labels = (issue.labels ?? []).map((l) => l.name);
 
   const noFix = { attempted: false, applied: false } as const;
@@ -165,7 +243,7 @@ export async function resolveIssue(
       `category (bug, feature, invalid, duplicate, stale, unclear). For ` +
       `invalid/duplicate/stale/unclear, write a short, polite comment to post; ` +
       `for bug/feature leave comment empty. Do not edit files or run any commands.` +
-      `\n\nISSUE JSON:\n${view.stdout}`,
+      `\n\nISSUE JSON:\n${issueJson}`,
     { result: Triage },
   );
   const triageOut = { valid: triage.valid, category: triage.category, reason: triage.reason };
@@ -173,7 +251,7 @@ export async function resolveIssue(
   // 3. Not fixable -> comment (+ close for invalid/duplicate/stale) in code.
   if (triage.category === 'invalid' || triage.category === 'duplicate' || triage.category === 'stale') {
     await comment(triage.comment || `Closing as ${triage.category}: ${triage.reason}`);
-    if (!dryRun) await sh(`gh issue close ${n} --reason "not planned"`);
+    if (!dryRun) await github.close(n, 'not planned');
     return { issue: n, triage: triageOut, fix: noFix, verification: noVerify, closed: !dryRun };
   }
   if (triage.category === 'unclear') {
@@ -325,7 +403,7 @@ export async function resolveIssue(
   let demo: DemoResult | undefined;
   let mediaSection = '';
   if (finalChanged.some(isWeb)) {
-    demo = await recordWebDemo({ harness, sh, n, title: issue.title }).catch(
+    demo = await recordWebDemo({ harness, sh, github, n, title: issue.title }).catch(
       (err: unknown): DemoResult => ({
         applicable: true,
         recorded: false,
@@ -363,8 +441,7 @@ export async function resolveIssue(
   }
 
   // 7. Commit and push only after all required verification has passed.
-  const branchRef = await sh(`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`);
-  const defaultBranch = (branchRef.exitCode === 0 && branchRef.stdout.trim()) || 'master';
+  const defaultBranch = await github.getDefaultBranch();
 
   await harness.sandbox.writeFile(
     '/tmp/resolve-issue-commit.txt',
@@ -376,11 +453,10 @@ export async function resolveIssue(
 
   const sha = (await sh(`git rev-parse --short HEAD`)).stdout.trim();
 
-  const push = await sh(`git push origin HEAD:${defaultBranch}`);
-  if (push.exitCode !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
+  await github.push(defaultBranch);
 
   await comment(`Fixed in ${sha} on \`${defaultBranch}\`. Closing.${mediaSection}`);
-  await sh(`gh issue close ${n} --reason completed`);
+  await github.close(n, 'completed');
 
   return {
     issue: n,
@@ -409,12 +485,13 @@ type ShellResult = { exitCode: number; stdout: string; stderr: string };
 type RecordDeps = {
   harness: FlueHarness;
   sh: (command: string) => Promise<ShellResult>;
+  github: Github;
   n: number;
   title: string;
 };
 
 async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
-  const { harness, sh, n, title } = deps;
+  const { harness, sh, github, n, title } = deps;
 
   const { data: intent } = await harness.prompt(
     `Decide whether the fix you just made for issue #${n} ("${title}") has a ` +
@@ -566,23 +643,18 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
       return { applicable: true, recorded: false, note: 'ffmpeg produced no converted video' };
     }
 
-    const slug = (await sh(`gh repo view --json nameWithOwner --jq .nameWithOwner`)).stdout.trim();
-    const pub = await publishMedia(sh, n, true, haveGif, haveMp4);
-    if (pub.exitCode !== 0) {
-      return {
-        applicable: true,
-        recorded: false,
-        note: `publish failed: ${commandError(pub)}`,
-      };
-    }
-
-    const rawBase = `https://raw.githubusercontent.com/${slug}/bot-media`;
+    const urls = await github.publishMedia({
+      issueNumber: n,
+      screenshotPath: `/tmp/issue-${n}.png`,
+      gifPath: haveGif ? `/tmp/issue-${n}.gif` : undefined,
+      mp4Path: haveMp4 ? `/tmp/issue-${n}.mp4` : undefined,
+    });
     return {
       applicable: true,
       recorded: true,
-      screenshotUrl: `${rawBase}/issue-${n}.png`,
-      gifUrl: haveGif ? `${rawBase}/issue-${n}.gif` : undefined,
-      mp4Url: haveMp4 ? `${rawBase}/issue-${n}.mp4` : undefined,
+      screenshotUrl: urls.screenshotUrl,
+      gifUrl: urls.gifUrl,
+      mp4Url: urls.mp4Url,
       note: outcome.note || 'recorded with agent-browser',
     };
   } catch (error) {

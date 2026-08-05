@@ -14,6 +14,8 @@ import {
 import { local } from '@flue/runtime/node';
 
 import {
+  createProdGithub,
+  type Github,
   type Payload,
   PayloadSchema,
   resolveIssue,
@@ -54,14 +56,17 @@ setProvider(
  * pipeline. Application code owns GitHub writes, verification, commits,
  * pushes, and visual proof; harness prompts only perform judgment work.
  */
-export function IssueResolver() {
+export function useIssueResolver(
+  github: (harness: Parameters<typeof createProdGithub>[0]) => Github,
+  sandbox = local({ env: { GH_TOKEN: process.env.GH_TOKEN } }),
+) {
   const payload = useInitialData<Payload>();
   const writeResult = useDataWriter('result', { schema: Result });
 
   useModel('bedrock-mantle/anthropic.claude-opus-4-8', { thinkingLevel: 'high' });
-  useSandbox(local({ env: { GH_TOKEN: process.env.GH_TOKEN } }));
+  useSandbox(sandbox);
   useAgentStart(async ({ append, harness }) => {
-    const result = await resolveIssue(harness, payload);
+    const result = await resolveIssue(harness, payload, github(harness));
     writeResult(result);
     append({
       kind: 'signal',
@@ -76,6 +81,10 @@ export function IssueResolver() {
     'commit, or close an issue; deterministic application code owns those operations. ' +
     'When a resolve_issue.completed signal is present, briefly report its outcome and stop.'
   );
+}
+
+export function IssueResolver() {
+  return useIssueResolver(createProdGithub);
 }
 
 IssueResolver.agentName = 'issue-resolver';

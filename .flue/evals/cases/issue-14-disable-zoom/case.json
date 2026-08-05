@@ -1,0 +1,22 @@
+{
+  "repository": {
+    "url": "https://github.com/baggiiiie/expense-tracking.git",
+    "revision": "d462fe6f9352be9e46a612cd719d7c7266a85a07",
+    "defaultBranch": "master"
+  },
+  "issue": {
+    "number": 14,
+    "title": "Feedback from /",
+    "body": "**App:** Svelte web app\n\n**Route:** `/`\n\n**Submitted:** 2026-06-19T09:18:34Z\n\n---\n\nwhen i double click a number on the numpad on the add expense page, it zooms in. can we disable zooming for this webapp",
+    "labels": ["feedback"]
+  },
+  "expectedPatch": "expected.patch",
+  "verify": [
+    "node -e \"const html = require('fs').readFileSync('server/web/src/app.html', 'utf8'); if (!html.includes('maximum-scale=1, user-scalable=no')) process.exit(1)\""
+  ],
+  "expected": {
+    "triage": "bug",
+    "shouldPush": true,
+    "shouldClose": true
+  }
+}
