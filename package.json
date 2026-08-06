@@ -6,9 +6,12 @@
   "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
   "scripts": {
     "eval": "vitest run --config .flue/evals/vitest.config.ts",
-    "resolve-issue": "flue run .flue/agents/issue-resolver.ts --message 'Resolve the configured issue.'",
+    "resolve-issue": "node .flue/scripts/resolve-issue.mjs",
     "test": "node --test .flue/tests/resolve-issue.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run verify:web && npm run verify:server",
+    "verify:web": "cd server/web && pnpm install --frozen-lockfile && pnpm build",
+    "verify:server": "cd server && go build ./... && go test ./..."
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.83.0",

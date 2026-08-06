@@ -6,12 +6,8 @@ import { local, start } from '@flue/runtime/node';
 import * as v from 'valibot';
 
 import { useIssueResolver } from '../agents/issue-resolver.ts';
-import {
-  type GitHubIssue,
-  PayloadSchema,
-  Result,
-  type ResultType,
-} from '../workflows/resolve-issue.ts';
+import { PayloadSchema, Result, type ResultType } from '../workflows/resolve-issue.ts';
+import { type GitHubIssue } from '../workflows/github.ts';
 import { createEvalGithub, type EvalAction } from './eval-github.ts';
 import { loadCase } from './eval-case.ts';
 import {
@@ -52,8 +48,9 @@ export async function runCase(name: string, keepWorkspace: boolean) {
     const github = createEvalGithub(issue, testCase.repository.defaultBranch, actions);
 
     function EvalIssueResolver() {
+      // No demo integration: eval runs skip the browser recording step.
       return useIssueResolver(
-        () => github,
+        () => ({ github }),
         local({ cwd: repository!.workspace, env: repository!.env }),
       );
     }
@@ -66,7 +63,7 @@ export async function runCase(name: string, keepWorkspace: boolean) {
       const agent = init(EvalIssueResolver, { id: `eval-${name}-${Date.now()}`, uid: null });
       const receipt = await agent.dispatch({
         message: `Resolve issue #${issue.number}.`,
-        initialData: { issueNumber: issue.number, dryRun: false },
+        initialData: { issueNumber: issue.number },
       });
       const reply = await agent.read(receipt);
       return v.parse(Result, reply.data.result?.at(-1));

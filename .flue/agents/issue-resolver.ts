@@ -9,18 +9,21 @@ import {
   useDataWriter,
   useInitialData,
   useModel,
+  usePersistentState,
   useSandbox,
 } from '@flue/runtime';
 import { local } from '@flue/runtime/node';
 
 import {
-  createProdGithub,
-  type Github,
   type Payload,
   PayloadSchema,
+  type ResolveDeps,
   resolveIssue,
   Result,
+  type ResultType,
 } from '../workflows/resolve-issue.ts';
+import { createProdGithub } from '../workflows/github.ts';
+import { createBrowserDemo } from '../workflows/web-demo.ts';
 
 const gatewayModel = anthropicProvider()
   .getModels()
@@ -36,7 +39,9 @@ setProvider(
     auth: {
       apiKey: {
         name: 'Bedrock Mantle key',
-        resolve: async () => ({ auth: { apiKey: process.env.ANTHROPIC_API_KEY } }),
+        resolve: async () => ({
+          auth: { apiKey: process.env.ANTHROPIC_API_KEY },
+        }),
       },
     },
     models: [
@@ -51,22 +56,21 @@ setProvider(
   }),
 );
 
-/**
- * A CI coding agent whose start hook runs the deterministic issue-resolution
- * pipeline. Application code owns GitHub writes, verification, commits,
- * pushes, and visual proof; harness prompts only perform judgment work.
- */
 export function useIssueResolver(
-  github: (harness: Parameters<typeof createProdGithub>[0]) => Github,
-  sandbox = local({ env: { GH_TOKEN: process.env.GH_TOKEN } }),
+  makeDeps: (harness: Parameters<typeof createProdGithub>[0], signal?: AbortSignal) => ResolveDeps,
+  sandbox = local({ cwd: process.cwd() }),
 ) {
   const payload = useInitialData<Payload>();
   const writeResult = useDataWriter('result', { schema: Result });
+  const [completedResult, setCompletedResult] = usePersistentState<ResultType | null>('resolve-issue.result', null);
 
-  useModel('bedrock-mantle/anthropic.claude-opus-4-8', { thinkingLevel: 'high' });
+  useModel('bedrock-mantle/anthropic.claude-opus-4-8', {
+    thinkingLevel: 'high',
+  });
   useSandbox(sandbox);
-  useAgentStart(async ({ append, harness }) => {
-    const result = await resolveIssue(harness, payload, github(harness));
+  useAgentStart(async ({ append, harness, signal }) => {
+    const result = completedResult ?? (await resolveIssue(harness, payload, makeDeps(harness, signal), signal));
+    if (completedResult === null) setCompletedResult(result);
     writeResult(result);
     append({
       kind: 'signal',
@@ -84,9 +88,14 @@ export function useIssueResolver(
 }
 
 export function IssueResolver() {
-  return useIssueResolver(createProdGithub);
+  return useIssueResolver((harness, signal) => ({
+    github: createProdGithub(harness, signal),
+    demo: createBrowserDemo(harness, signal),
+  }));
 }
 
 IssueResolver.agentName = 'issue-resolver';
 IssueResolver.initialData = PayloadSchema;
-IssueResolver.durability = { maxAttempts: 3, timeoutMs: 30 * 60 * 1000 };
+// The workflow performs external side effects. Do not automatically replay an
+// interrupted attempt; application-level operations are made idempotent separately.
+IssueResolver.durability = { maxAttempts: 1, timeoutMs: 30 * 60 * 1000 };

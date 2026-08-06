@@ -1,10 +1,9 @@
-import type { Github, GitHubIssue } from '../workflows/resolve-issue.ts';
+import type { Github, GitHubIssue } from '../workflows/github.ts';
 
 export type EvalAction =
   | { type: 'comment'; number: number; body: string }
   | { type: 'close'; number: number; reason: 'completed' | 'not planned' }
-  | { type: 'push'; branch: string }
-  | { type: 'publish-media'; issueNumber: number };
+  | { type: 'push'; branch: string };
 
 export function createEvalGithub(
   issue: GitHubIssue,
@@ -27,14 +26,6 @@ export function createEvalGithub(
     },
     async push(branch) {
       actions.push({ type: 'push', branch });
-    },
-    async publishMedia(input) {
-      actions.push({ type: 'publish-media', issueNumber: input.issueNumber });
-      return {
-        screenshotUrl: input.screenshotPath ? 'eval://screenshot' : undefined,
-        gifUrl: input.gifPath ? 'eval://demo.gif' : undefined,
-        mp4Url: input.mp4Path ? 'eval://demo.mp4' : undefined,
-      };
     },
   };
 }

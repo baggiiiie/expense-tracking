@@ -5,6 +5,13 @@ import { runCase } from './run-case.ts';
 
 // local() is not filesystem or network containment. Run model-backed evals only
 // on a credential-clean, disposable CI runner, orb, container, or VM.
+if (process.env.CI !== 'true' && process.env.FLUE_EVAL_DISPOSABLE !== '1') {
+  throw new Error(
+    'Resolver evals use local() and must run in a disposable CI runner/container/VM. ' +
+      'Set FLUE_EVAL_DISPOSABLE=1 only inside such an environment.',
+  );
+}
+
 const keepWorkspace = process.env.EVAL_KEEP_WORKSPACE === '1';
 const cases = await listCases();
 
@@ -15,6 +22,8 @@ describe.sequential('issue resolver', () => {
     }
 
     const report = await runCase(name, keepWorkspace);
-    expect(report, JSON.stringify(report, null, 2)).toMatchObject({ passed: true });
+    expect(report, JSON.stringify(report, null, 2)).toMatchObject({
+      passed: true,
+    });
   });
 });
