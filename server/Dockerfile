@@ -1,5 +1,7 @@
 FROM node:22-alpine AS web-builder
 
+ARG GIT_SHA
+ENV GIT_SHA=$GIT_SHA
 RUN corepack enable
 WORKDIR /web
 COPY web/package.json web/pnpm-lock.yaml ./

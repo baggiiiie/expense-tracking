@@ -1,48 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { assertCleanWorkspace, buildCommitMessage, parsePorcelainV1Z } from '../workflows/resolve-issue.ts';
+import { setupEnv } from '../workflows/resolve-issue.ts';
 import { createProdGithub } from '../workflows/github.ts';
-
-describe('buildCommitMessage', () => {
-  it('references the issue without using a GitHub auto-close keyword', () => {
-    const message = buildCommitMessage(20, 'Show weekdays next to dates');
-
-    assert.equal(message, 'Address issue #20: Show weekdays next to dates\n');
-    assert.doesNotMatch(message, /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#20\b/i);
-  });
-});
-
-describe('parsePorcelainV1Z', () => {
-  it('returns both sides of renames and preserves unusual paths', () => {
-    const output =
-      'R  server/new name.go\0docs/old -> name.md\0' + '?? docs/untracked file.md\0' + ' M server/web/src/page.ts\0';
-
-    assert.deepEqual(parsePorcelainV1Z(output), [
-      'server/new name.go',
-      'docs/old -> name.md',
-      'docs/untracked file.md',
-      'server/web/src/page.ts',
-    ]);
-  });
-
-  it('rejects incomplete rename records', () => {
-    assert.throws(() => parsePorcelainV1Z('R  new.ts\0'), /incomplete git rename record/);
-  });
-});
 
 describe('workspace preflight', () => {
   it('refuses a dirty checkout without changing it', async () => {
     const exec = async () => ({
       exitCode: 0,
-      stdout: ' M existing.txt\0?? untracked.txt\0',
+      stdout: ' M existing.txt\n?? untracked.txt\n',
       stderr: '',
     });
     const harness = { sandbox: { exec } };
 
     await assert.rejects(
-      assertCleanWorkspace(harness as never),
-      /requires a clean disposable checkout.*existing\.txt.*untracked\.txt/,
+      setupEnv(harness as never),
+      /requires a clean disposable checkout[\s\S]*existing\.txt[\s\S]*untracked\.txt/,
     );
   });
 });

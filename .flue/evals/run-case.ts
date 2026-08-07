@@ -39,11 +39,11 @@ export async function runCase(name: string, keepWorkspace: boolean) {
     repository = await createRepository(name);
     await checkoutRepository(repository, testCase);
     const actions: EvalAction[] = [];
+    const issueNumber = testCase.issue.number;
     const issue: GitHubIssue = {
-      ...testCase.issue,
-      labels: testCase.issue.labels.map((label) => ({ name: label })),
-      comments: [],
+      content: `Title: ${testCase.issue.title}\n\nBody: ${testCase.issue.body}`,
       state: 'OPEN',
+      images: [],
     };
     const github = createEvalGithub(issue, testCase.repository.defaultBranch, actions);
 
@@ -62,8 +62,8 @@ export async function runCase(name: string, keepWorkspace: boolean) {
       await using flue = await start({ agents: [EvalIssueResolver] });
       const agent = init(EvalIssueResolver, { id: `eval-${name}-${Date.now()}`, uid: null });
       const receipt = await agent.dispatch({
-        message: `Resolve issue #${issue.number}.`,
-        initialData: { issueNumber: issue.number },
+        message: `Resolve issue #${issueNumber}.`,
+        initialData: { issueNumber },
       });
       const reply = await agent.read(receipt);
       return v.parse(Result, reply.data.result?.at(-1));
@@ -97,7 +97,7 @@ export async function runCase(name: string, keepWorkspace: boolean) {
     const expectedCloseReason = testCase.expected.shouldPush ? 'completed' : 'not planned';
     const closeMatches = testCase.expected.shouldClose
       ? closes.length === 1 &&
-        closes[0]?.number === issue.number &&
+        closes[0]?.number === issueNumber &&
         closes[0]?.reason === expectedCloseReason
       : closes.length === 0;
     const expectedPatch = await readFile(path.join(directory, testCase.expectedPatch), 'utf8');

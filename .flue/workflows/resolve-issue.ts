@@ -1,8 +1,9 @@
 import { type FlueHarness } from '@flue/runtime';
 import * as v from 'valibot';
 
+import { commandError, type ShellResult } from './shell.ts';
 import type { Github } from './github.ts';
-import type { DemoResult, WebDemo } from './web-demo.ts';
+import type { WebDemo } from './web-demo.ts';
 
 /**
  * resolve-issue workflow
@@ -81,8 +82,6 @@ export const Result = v.object({
 
 export type ResultType = v.InferOutput<typeof Result>;
 
-export type ShellResult = { exitCode: number; stdout: string; stderr: string };
-
 /** External integrations the resolver depends on (dependency-injection seam). */
 export type ResolveDeps = {
   github: Github;
@@ -105,11 +104,12 @@ export async function resolveIssue(
     if (result.exitCode !== 0) throw new Error(`${description} failed: ${commandError(result)}`);
     return result;
   };
+  const shortHead = async (): Promise<string> =>
+    (await checked(`git rev-parse --short HEAD`, 'git rev-parse')).stdout.trim();
   await setupEnv(harness, signal);
 
-  // 1. Fetch the issue (deterministic).
+  // 1. Fetch the issue (deterministic; includes any feedback images).
   const issue = await github.getIssue(n);
-  const issueJson = JSON.stringify(issue);
 
   const noFix = { attempted: false, applied: false } as const;
   const noVerify = { ran: false, passed: false, details: '' } as const;
@@ -126,14 +126,13 @@ export async function resolveIssue(
     return triageResult({ valid: true, category: 'stale', reason: 'issue is already closed' }, true);
   }
 
-  // 2. Triage (AGENT — judgment only, over the issue JSON we already fetched).
+  // 2. Triage (AGENT — judgment only, over the issue we already fetched).
   const { data: triage } = await harness.prompt(
     `Triage GitHub issue #${n} for this repository. Classify it into exactly one ` +
       `category (bug, feature, invalid, duplicate, stale, unclear) and give a concise ` +
-      `reason. For invalid/duplicate/stale/unclear the reason is posted as a comment to ` +
-      `the issue author, so keep it short and polite. Do not edit files or run any commands.` +
-      `\n\nISSUE JSON:\n${issueJson}`,
-    { result: Triage, signal },
+      `reason. Do not edit files or run any commands yet.` +
+      `\n\n<issue_content>:\n${issue.content}\n</issue_content>`,
+    { result: Triage, images: issue.images, signal },
   );
   // 3. Not a fixable bug/feature: post the reason. Close the clearly-terminal
   // categories (invalid/duplicate/stale); leave unclear or unvalidated open.
@@ -144,15 +143,18 @@ export async function resolveIssue(
     return triageResult(triage, close);
   }
 
-  // 4. Implement the fix (AGENT — edits files only; the workflow owns git/gh).
-
+  // 4. Implement, verify, and commit the fix (AGENT). Local git only — the
+  // workflow still owns push, comment, and close.
+  const baseSha = await shortHead();
   const { data: fix } = await harness.prompt(
-    `Implement the smallest correct fix for issue #${n}: "${issue.title}". Edit only ` +
-      `the files the fix requires; do not refactor unrelated code. Then verify your change ` +
-      `by running \`npm run verify\` from the repo root and iterate until it passes. Use ` +
-      `your file-editing and shell tools, but do NOT run git or gh, and do not commit, push, ` +
-      `or close anything; the workflow handles that. Report whether you applied a fix, ` +
-      `whether your verification passed, and a one-line summary.`,
+    `Implement the smallest correct fix for issue #${n}. Edit only the ` +
+      `files the fix requires; do not refactor unrelated code. Verify by running ` +
+      `\`npm run verify\` from the repo root and iterate until it passes. Then commit your ` +
+      `change with \`git add -A && git commit\`, using a message of the form ` +
+      `"Address issue #${n}: <summary>" — do NOT use GitHub auto-close keywords like ` +
+      `"fixes" or "closes"; the workflow closes the issue itself. Do NOT run \`git push\` or ` +
+      `any \`gh\` command, and do not close the issue; the workflow pushes and closes. ` +
+      `Report whether you applied a fix, whether your verification passed, and a one-line summary.`,
     { result: Fix, signal },
   );
 
@@ -167,8 +169,11 @@ export async function resolveIssue(
     };
   };
 
-  if (!fix.applied || (await changedFiles(harness, signal)).length === 0) {
-    return leaveOpen(`Could not implement a safe automated fix. Leaving this open for a human.`, noVerify);
+  // The agent's edits should now live in a new commit; HEAD moving off baseSha is
+  // the deterministic signal that a fix actually landed.
+  const sha = await shortHead();
+  if (!fix.applied || sha === baseSha) {
+    return leaveOpen(`Could not implement and commit a safe automated fix. Leaving this open for a human.`, noVerify);
   }
 
   // 5. Trust the agent's self-reported verification for the push/close decision.
@@ -181,37 +186,24 @@ export async function resolveIssue(
   };
   if (!fix.verified) {
     return leaveOpen(
-      `A fix was attempted but the agent could not get it to pass verification, so nothing was pushed. Leaving open.`,
+      `A fix was committed but did not pass verification, so nothing was pushed. Leaving open.`,
       verification,
     );
   }
 
-  // 6. Commit the verified fix (pushed in step 8, once any demo media is ready).
-  const changed = await changedFiles(harness, signal); // captured before commit, for the demo
+  // 6. Look up the branch to push the agent's commit to.
   const defaultBranch = await github.getDefaultBranch();
-  await harness.sandbox.writeFile('/tmp/resolve-issue-commit.txt', buildCommitMessage(n, fix.summary));
-  await checked(`git add -A`, 'git add');
-  await checked(`git commit -F /tmp/resolve-issue-commit.txt`, 'git commit');
-  const sha = (await checked(`git rev-parse --short HEAD`, 'git rev-parse')).stdout.trim();
-  if (!sha) throw new Error('git rev-parse returned an empty commit SHA');
 
-  // 7. Record a best-effort demo of visible web changes. It never blocks the
-  // fix; a recording failure is just noted in the closing comment.
-  const demo: DemoResult = deps.demo
-    ? await deps.demo
-        .demonstrate({ issueNumber: n, title: issue.title, changedFiles: changed })
-        .catch((err: unknown): DemoResult => {
-          if (isAbortError(err) || signal?.aborted) throw err;
-          return { applicable: true, recorded: false, refs: [], media: {}, note: `recording error: ${String(err)}` };
-        })
-    : { applicable: false, recorded: false, refs: [], media: {}, note: 'no demo configured' };
+  // 7. Record a best-effort demo of visible web changes. It never blocks the fix;
+  // demonstrate() reports its own outcome and closing-comment markdown.
+  const demo = deps.demo ? await deps.demo.demonstrate({ issueNumber: n }) : undefined;
 
   // 8. Push the fix and any demo media in one atomic push, then comment + close.
-  await github.push(defaultBranch, demo.refs);
-  await github.comment(n, `Fixed in ${sha} on \`${defaultBranch}\`. Closing.${demoSection(demo)}`);
+  await github.push(defaultBranch, demo?.refs ?? []);
+  await github.comment(n, `Fixed in ${sha} on \`${defaultBranch}\`. Closing.${demo?.comment ?? ''}`);
   await github.close(n, 'completed');
 
-  const resultDemo = demo.applicable
+  const resultDemo = demo?.applicable
     ? { applicable: demo.applicable, recorded: demo.recorded, media: demo.media, note: demo.note }
     : undefined;
   return {
@@ -224,78 +216,18 @@ export async function resolveIssue(
   };
 }
 
-/** Markdown appended to the closing comment: the recorded demo, or why it failed. */
-function demoSection(demo: DemoResult): string {
-  if (demo.recorded) {
-    let section = `\n\n**Verified in-browser:**`;
-    if (demo.media.screenshotUrl) section += `\n\n![screenshot](${demo.media.screenshotUrl})`;
-    if (demo.media.gifUrl) section += `\n\n![demo](${demo.media.gifUrl})`;
-    if (demo.media.mp4Url) section += `\n\n[Full-resolution recording](${demo.media.mp4Url})`;
-    return section;
-  }
-  if (demo.applicable) return `\n\n_Automated demo couldn't be recorded: ${demo.note}_`;
-  return '';
-}
-
-/** Build a descriptive commit subject without triggering GitHub auto-close. */
-export function buildCommitMessage(issueNumber: number, summary: string): string {
-  return `Address issue #${issueNumber}: ${summary}\n`;
-}
-
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-export function commandError(result: ShellResult): string {
-  return (result.stderr || result.stdout).slice(-500).trim() || `exit ${result.exitCode}`;
-}
-
-export function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
-}
-
-/** Parse `git status --porcelain=v1 -z`, preserving unusual path names. */
-export function parsePorcelainV1Z(output: string): string[] {
-  if (!output) return [];
-  const records = output.split('\0');
-  const paths: string[] = [];
-  for (let index = 0; index < records.length; index++) {
-    const record = records[index];
-    if (!record) continue;
-    if (record.length < 4 || record[2] !== ' ') {
-      throw new Error(`invalid git porcelain record: ${JSON.stringify(record)}`);
-    }
-    const status = record.slice(0, 2);
-    paths.push(record.slice(3));
-    if (status.includes('R') || status.includes('C')) {
-      const source = records[++index];
-      if (source === undefined || source === '') throw new Error('incomplete git rename record');
-      paths.push(source);
-    }
-  }
-  return [...new Set(paths)];
-}
-
-async function gitStatus(harness: FlueHarness, signal?: AbortSignal): Promise<ShellResult> {
-  const status = await harness.sandbox.exec(`git status --porcelain=v1 -z --untracked-files=all`, { signal });
-  if (status.exitCode !== 0) throw new Error(`git status failed: ${commandError(status)}`);
-  return status;
-}
-
-export async function assertCleanWorkspace(harness: FlueHarness, signal?: AbortSignal): Promise<void> {
-  const status = await gitStatus(harness, signal);
-  const changed = parsePorcelainV1Z(status.stdout);
-  if (changed.length > 0) {
-    throw new Error(`issue resolver requires a clean disposable checkout; refusing to touch: ${changed.join(', ')}`);
-  }
-}
-
+/** Trimmed `git status --porcelain` output; an empty string means a clean tree. */
 /**
- * Prepare the disposable checkout: require a clean tree and set the bot's git
- * identity.
+ * Prepare the disposable checkout: require a clean tree (so the agent's edits
+ * can't be confused with pre-existing ones) and set the bot's git identity.
  */
 export async function setupEnv(harness: FlueHarness, signal?: AbortSignal): Promise<void> {
-  await assertCleanWorkspace(harness, signal);
+  const status = await harness.sandbox.exec(`git status --porcelain --untracked-files=all`, { signal });
+  if (status.exitCode !== 0) throw new Error(`git status failed: ${commandError(status)}`);
+  const dirty = status.stdout.trim();
+  if (dirty) {
+    throw new Error(`issue resolver requires a clean disposable checkout; refusing to touch:\n${dirty}`);
+  }
   const config = await harness.sandbox.exec(
     `git config user.name "issue-resolver[bot]" && ` +
       `git config user.email "issue-resolver@users.noreply.github.com"`,
@@ -304,7 +236,3 @@ export async function setupEnv(harness: FlueHarness, signal?: AbortSignal): Prom
   if (config.exitCode !== 0) throw new Error(`git identity configuration failed: ${commandError(config)}`);
 }
 
-/** Files changed in the working tree, including both sides of renames. */
-async function changedFiles(harness: FlueHarness, signal?: AbortSignal): Promise<string[]> {
-  return parsePorcelainV1Z((await gitStatus(harness, signal)).stdout);
-}

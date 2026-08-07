@@ -43,6 +43,8 @@ jobs:
         with:
           context: server
           file: server/Dockerfile
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

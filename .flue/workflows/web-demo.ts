@@ -1,7 +1,7 @@
 import { type FlueHarness } from '@flue/runtime';
 import * as v from 'valibot';
 
-import { commandError, isAbortError, shellQuote, type ShellResult } from './resolve-issue.ts';
+import { commandError, isAbortError, shellQuote, type ShellResult } from './shell.ts';
 import { credentialedGit } from './github.ts';
 
 // Base URL the recording server is reached at.
@@ -10,21 +10,19 @@ const REC_VIEWPORT = { width: 390, height: 844 } as const;
 const REC_USER = 'demo';
 const REC_PASS = 'demo-password';
 
-// The agent navigates the live browser to the affected page and demonstrates the
-// change, then reports whether it could show the expected result.
+// The agent navigates the live browser and judges, from the running app, whether
+// the fix has a visible effect; if so it demonstrates it and reports success.
 const RecordingOutcome = v.object({
-  demonstrated: v.boolean(),
+  applicable: v.boolean(), // is there a visible UI change to show?
+  demonstrated: v.boolean(), // did the agent observe the expected result?
   note: v.string(),
 });
 
-export type DemoRequest = {
+type DemoRequest = {
   issueNumber: number;
-  title: string;
-  /** Files the fix touched; used to decide whether a web demo even applies. */
-  changedFiles: string[];
 };
 
-export type DemoResult = {
+type DemoResult = {
   /** True when the change has a visible web UI result worth demonstrating. */
   applicable: boolean;
   /** True when visual proof was captured and media prepared for pushing. */
@@ -32,6 +30,8 @@ export type DemoResult = {
   /** Extra git refs the resolver must push atomically (e.g. ['bot-media']). */
   refs: string[];
   media: { screenshotUrl?: string; gifUrl?: string; mp4Url?: string };
+  /** Markdown to append to the closing issue comment (empty when not applicable). */
+  comment: string;
   note: string;
 };
 
@@ -48,7 +48,6 @@ export interface WebDemo {
   demonstrate(request: DemoRequest): Promise<DemoResult>;
 }
 
-const isWeb = (p: string) => p.startsWith('server/web/');
 
 /** Real browser-backed demo used by the production issue resolver. */
 export function createBrowserDemo(harness: FlueHarness, signal?: AbortSignal): WebDemo {
@@ -75,19 +74,24 @@ type RecordDeps = {
 
 async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
   const { harness, sh, gitRemote, signal, request } = deps;
-  const { issueNumber: n, title } = request;
+  const { issueNumber: n } = request;
 
   const notApplicable = (reason: string): DemoResult => ({
     applicable: false,
     recorded: false,
     refs: [],
     media: {},
+    comment: '',
     note: reason,
   });
-  const failed = (note: string): DemoResult => ({ applicable: true, recorded: false, refs: [], media: {}, note });
-
-  // Cheap deterministic gate: nothing to demonstrate if no web files changed.
-  if (!request.changedFiles.some(isWeb)) return notApplicable('no web files changed');
+  const failed = (note: string): DemoResult => ({
+    applicable: true,
+    recorded: false,
+    refs: [],
+    media: {},
+    comment: `\n\n_Automated demo couldn't be recorded: ${note}_`,
+    note,
+  });
 
   const build = await sh(`cd server && go build -o /tmp/expense-rec ./cmd/expense`);
   if (build.exitCode !== 0) return failed(`server build failed: ${commandError(build)}`);
@@ -163,16 +167,17 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
     recordingStarted = true;
 
     const { data: outcome } = await harness.prompt(
-      `Use the live browser to demonstrate the fix for issue #${n} ("${title}"). ` +
-        `The app is authenticated and open at ${REC_BASE} in agent-browser session ` +
-        `"${browserSession}", and recording is already active. Run agent-browser ` +
-        `commands through your shell using exactly this prefix: \`${browser}\`. ` +
-        `Navigate to the page affected by the issue, then inspect it with \`snapshot -c\` ` +
-        `before acting; prefer snapshot refs and semantic find commands over guessed CSS, ` +
-        `and re-snapshot after the page changes. Exercise the changed behavior, keep the ` +
-        `final visible state on screen, and run \`wait 1000\` so a human can see it. Do not ` +
-        `start or stop recording, take screenshots, close the browser, run git/gh, or edit ` +
-        `files. Return demonstrated=true only after you observed the expected result.`,
+      `Check and, if applicable, demonstrate the fix for issue #${n} in the ` +
+        `live browser. The app is authenticated and open at ${REC_BASE} in agent-browser ` +
+        `session "${browserSession}", and recording is already active. Run agent-browser ` +
+        `commands through your shell using exactly this prefix: \`${browser}\`. Navigate to ` +
+        `the page the issue is about and inspect it with \`snapshot -c\` before acting; prefer ` +
+        `snapshot refs and semantic find commands over guessed CSS, and re-snapshot after the ` +
+        `page changes. If the fix has no visible effect in the UI, set applicable=false and ` +
+        `stop. Otherwise exercise the changed behavior, keep the final visible state on screen, ` +
+        `run \`wait 1000\` so a human can see it, and set applicable=true and demonstrated=true ` +
+        `only after you observed the expected result. Do not start or stop recording, take ` +
+        `screenshots, close the browser, run git/gh, or edit files.`,
       { result: RecordingOutcome, signal },
     );
 
@@ -180,6 +185,7 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
     await runBrowser(`record stop`);
     recordingStarted = false;
 
+    if (!outcome.applicable) return notApplicable(outcome.note || 'no visible UI change to demonstrate');
     if (!outcome.demonstrated) return failed(`agent could not demonstrate the change: ${outcome.note}`);
 
     const artifacts = await sh(`test -s /tmp/demo.webm && test -s /tmp/issue-${n}.png`);
@@ -201,11 +207,17 @@ async function recordWebDemo(deps: RecordDeps): Promise<DemoResult> {
       gifPath: haveGif ? `/tmp/issue-${n}.gif` : undefined,
       mp4Path: haveMp4 ? `/tmp/issue-${n}.mp4` : undefined,
     });
+    const comment =
+      `\n\n**Verified in-browser:**` +
+      (media.screenshotUrl ? `\n\n![screenshot](${media.screenshotUrl})` : '') +
+      (media.gifUrl ? `\n\n![demo](${media.gifUrl})` : '') +
+      (media.mp4Url ? `\n\n[Full-resolution recording](${media.mp4Url})` : '');
     return {
       applicable: true,
       recorded: true,
       refs: ['bot-media'],
       media,
+      comment,
       note: outcome.note || 'recorded with agent-browser',
     };
   } catch (error) {

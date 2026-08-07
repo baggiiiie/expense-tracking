@@ -11,8 +11,7 @@ export function createEvalGithub(
   actions: EvalAction[],
 ): Github {
   return {
-    async getIssue(number) {
-      if (number !== issue.number) throw new Error(`unexpected issue number ${number}`);
+    async getIssue() {
       return issue;
     },
     async getDefaultBranch() {

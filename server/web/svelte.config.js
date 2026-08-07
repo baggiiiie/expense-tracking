@@ -2,6 +2,9 @@ import adapter from '@sveltejs/adapter-static';
 import { execSync } from 'node:child_process';
 
 function gitHash() {
+	if (process.env.GIT_SHA) {
+		return process.env.GIT_SHA.slice(0, 7);
+	}
 	try {
 		return execSync('git rev-parse --short HEAD').toString().trim();
 	} catch {

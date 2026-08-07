@@ -1,16 +1,31 @@
-import { type FlueHarness } from '@flue/runtime';
+import { type FlueHarness, type PromptImage } from '@flue/runtime';
 
-import { commandError, shellQuote, type ShellResult } from './resolve-issue.ts';
+import { commandError, shellQuote, type ShellResult } from './shell.ts';
 
 export type GitHubIssue = {
-  number: number;
-  title: string;
-  body: string;
-  labels?: { name: string }[];
-  comments?: { body?: string }[];
-  state?: string;
-  updatedAt?: string;
+  /** Clean markdown for the agent: `Title: <title>\n\nBody: <body>`. */
+  content: string;
+  state: string;
+  /** Attached feedback images, fetched and base64-encoded for the model. */
+  images: PromptImage[];
 };
+
+// Only images committed to this exact repo path are fetched. A fixed, public
+// prefix keeps issue-authored URLs from becoming an SSRF vector.
+const ALLOWED_IMAGE_PREFIX = 'https://raw.githubusercontent.com/baggiiiie/expense-tracking/master/.feedback/';
+const MAX_IMAGES = 6;
+
+/** Pull allowlisted feedback-image URLs out of issue markdown. */
+function extractImageUrls(markdown: string): string[] {
+  const urls = new Set<string>();
+  const patterns = [/!\[[^\]]*\]\((\S+?)\)/g, /<img[^>]+src=["']([^"']+)["']/gi];
+  for (const re of patterns) {
+    for (const match of markdown.matchAll(re)) {
+      if (match[1].startsWith(ALLOWED_IMAGE_PREFIX)) urls.add(match[1]);
+    }
+  }
+  return [...urls].slice(0, MAX_IMAGES);
+}
 
 /**
  * Deterministic GitHub + git-remote operations used by the resolver. This is a
@@ -53,14 +68,37 @@ export function createProdGithub(harness: FlueHarness, signal?: AbortSignal): Gi
     if (result.exitCode !== 0) throw new Error(`${description} failed: ${commandError(result)}`);
     return result;
   };
+  // Best-effort: download each allowlisted image and base64-encode it for the
+  // model. A failed or non-image URL is skipped, never fatal.
+  const fetchImages = async (urls: string[]): Promise<PromptImage[]> => {
+    const images: PromptImage[] = [];
+    for (const [index, url] of urls.entries()) {
+      const path = `/tmp/issue-image-${index}`;
+      const result = await sh(
+        `curl -fsSL --max-filesize 5000000 --max-time 20 ` +
+          (token ? `-H ${shellQuote(`Authorization: Bearer ${token}`)} ` : '') +
+          `-o ${shellQuote(path)} -w '%{content_type}' ${shellQuote(url)}`,
+      );
+      const mimeType = result.stdout.trim();
+      if (result.exitCode !== 0 || !/^image\/(png|jpe?g|gif|webp)$/.test(mimeType)) continue;
+      const bytes = await harness.sandbox.readFileBuffer(path);
+      images.push({ type: 'image', data: Buffer.from(bytes).toString('base64'), mimeType });
+    }
+    return images;
+  };
 
   return {
     async getIssue(number) {
       const result = requireSuccess(
-        await sh(`gh issue view ${number} --json number,title,body,labels,comments,state,updatedAt`),
+        await sh(`gh issue view ${number} --json title,body,state`),
         `gh issue view ${number}`,
       );
-      return JSON.parse(result.stdout) as GitHubIssue;
+      const raw = JSON.parse(result.stdout) as { title: string; body: string; state: string };
+      return {
+        content: `Title: ${raw.title}\n\nBody: ${raw.body}`,
+        state: raw.state,
+        images: await fetchImages(extractImageUrls(raw.body)),
+      };
     },
     async getDefaultBranch() {
       const result = requireSuccess(
