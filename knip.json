@@ -10,5 +10,6 @@
     ".flue/evals/*.eval.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "evals/**/*.ts", ".flue/**/*.{ts,mjs}"],
+  "ignoreDependencies": ["agent-browser"],
   "ignoreBinaries": ["build", "go"]
 }

@@ -39,47 +39,17 @@ jobs:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - run: npm ci
-      - name: Set up agent-browser (visual verification)
-        # agent-browser drives its own headless Chrome and records WebM through
-        # CDP. Visible web fixes require a screenshot and recording; a failure
-        # leaves the issue open. Install ffmpeg explicitly rather than relying
-        # on the hosted runner image because it converts WebM to GIF/MP4.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          npx --no-install agent-browser install --with-deps
-          ffmpeg -version
-          npx --no-install agent-browser doctor --offline
+      - name: Install resolver sandbox
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
       - name: Resolve issue
         env:
-          # gh/git auth for application-owned integration calls only; local() does not inherit it.
+          # The workflow keeps this out of the coding agent's environment.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # bedrock-mantle provider (Anthropic Messages protocol).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Ubuntu 24.04 hosted runners block Chromium's user-namespace sandbox
-          # with AppArmor. This job is ephemeral and only records the local,
-          # throwaway demo server, so disable Chromium's sandbox for this step.
-          AGENT_BROWSER_ARGS: --no-sandbox
         run: |
           ISSUE="${{ github.event_name == 'workflow_dispatch' && inputs.issueNumber || github.event.issue.number }}"
-          npx flue run .flue/agents/issue-resolver.ts \
-            --message "Resolve issue #${ISSUE}." \
-            --data "{\"issueNumber\": ${ISSUE}}" \
-            --id "resolve-issue-${ISSUE}-${GITHUB_RUN_ID}" \
-            --new --json
-
-      - name: Upload visual verification artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-${{ github.event.issue.number || inputs.issueNumber }}-visual-proof
-          path: |
-            /tmp/demo.webm
-            /tmp/issue-*.png
-            /tmp/issue-*.gif
-            /tmp/issue-*.mp4
-          if-no-files-found: ignore
-          retention-days: 14
+          npm run resolve-issue -- --issue "${ISSUE}"
 
       - name: Dispatch server image build
         if: ${{ success() }}

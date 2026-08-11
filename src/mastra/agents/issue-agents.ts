@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { Agent } from '@mastra/core/agent';
 import { LocalFilesystem, LocalSandbox, Workspace } from '@mastra/core/workspace';
 
@@ -60,11 +62,12 @@ const workspace = new Workspace({
       nativeSandbox: {
         allowNetwork: true,
         readWritePaths: [env.HOME, env.TMPDIR].filter((path): path is string => Boolean(path)),
+        // Keep Mastra's generated macOS profile inside the disposable checkout
+        // instead of leaving `.sandbox-profiles` artifacts in the caller's cwd.
+        seatbeltProfilePath: path.join(workingDirectory, '.git', 'mastra-seatbelt.sb'),
       },
     });
   },
-  // Background processes must stay reachable across tool calls within a run.
-  sandboxCacheKey: ({ requestContext }) => resolveResolutionContext(requestContext).id,
 });
 
 export const coderAgent = new Agent({

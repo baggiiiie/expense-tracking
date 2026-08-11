@@ -5,15 +5,11 @@ import type { Github } from './integrations/github.ts';
 /**
  * Per-run dependency seam for the Mastra resolver.
  *
- * Mastra resolves a workspace and reads tools per request via `requestContext`,
- * so injecting dependencies means putting a lookup key on the context rather
- * than passing a deps object down a call chain (as the Flue resolver does).
- * Production registers a real GitHub integration and the repo checkout; evals
- * register a recording fake and a disposable clone, which is what lets the same
- * workflow graph run under `runEvals` with no side effects.
+ * Mastra resolves a workspace and reads tools per request via `requestContext`.
+ * Production passes a real GitHub integration and checkout; evals pass a
+ * recording fake and disposable clone to the same workflow graph.
  */
 export type ResolutionContext = {
-  id: string;
   /** Owns every GitHub side effect, and the only holder of the GitHub token. */
   github: Github;
   /** Absolute path to the checkout the coding agent may edit. */
@@ -23,9 +19,12 @@ export type ResolutionContext = {
    * the coding agent alike. Always scrubbed — see {@link checkoutEnv}.
    */
   env: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+  /** Override the production build command for focused tests and eval cases. */
+  verifyCommand?: string;
 };
 
-const RESOLUTION_CONTEXT_KEY = 'issue-resolution-id';
+const RESOLUTION_CONTEXT_KEY = 'issue-resolution' as const;
 
 /**
  * Variables a build needs, allowlisted from the ambient environment.
@@ -67,35 +66,15 @@ export function checkoutEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.Pro
   return env;
 }
 
-const registry = new Map<string, ResolutionContext>();
-
-export function registerResolutionContext(
-  context: Omit<ResolutionContext, 'id' | 'env'> & { id?: string; env?: NodeJS.ProcessEnv },
-): ResolutionContext {
-  const id = context.id ?? `resolution-${crypto.randomUUID()}`;
-  const registered: ResolutionContext = { ...context, id, env: checkoutEnv(context.env) };
-  registry.set(id, registered);
-  return registered;
-}
-
-export function unregisterResolutionContext(id: string): void {
-  registry.delete(id);
-}
-
-/** A RequestContext that points the workflow at a registered resolution context. */
-export function resolutionRequestContext(context: ResolutionContext): RequestContext {
-  return new RequestContext([[RESOLUTION_CONTEXT_KEY, context.id]]);
+/** Build the per-run dependency context consumed by the workflow. */
+export function resolutionRequestContext(
+  context: Omit<ResolutionContext, 'env'> & { env?: NodeJS.ProcessEnv },
+): RequestContext<any> {
+  return new RequestContext([[RESOLUTION_CONTEXT_KEY, { ...context, env: checkoutEnv(context.env) }]]);
 }
 
 export function resolveResolutionContext(requestContext?: RequestContext): ResolutionContext {
-  const id = requestContext?.get(RESOLUTION_CONTEXT_KEY);
-  if (typeof id !== 'string') {
-    throw new Error(
-      `resolve-issue requires a "${RESOLUTION_CONTEXT_KEY}" request context value; ` +
-        'start the run through resolveIssue() or the eval harness',
-    );
-  }
-  const context = registry.get(id);
-  if (!context) throw new Error(`unknown issue-resolution context: ${id}`);
+  const context = requestContext?.get(RESOLUTION_CONTEXT_KEY) as ResolutionContext | undefined;
+  if (!context) throw new Error(`resolve-issue requires a "${RESOLUTION_CONTEXT_KEY}" request context value`);
   return context;
 }

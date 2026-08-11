@@ -2,7 +2,7 @@ import { createStep, createWorkflow } from '@mastra/core/workflows';
 import * as v from 'valibot';
 
 import { CLOSABLE_CATEGORIES } from '../../shared/issue-resolution.ts';
-import { commandError, createShell, type Shell } from '../integrations/shell.ts';
+import { commandError, createShell, shellQuote, type Shell } from '../integrations/shell.ts';
 import { resolveResolutionContext } from '../runtime.ts';
 import {
   isFixable,
@@ -28,20 +28,25 @@ import {
  * itself rather than by anything the model reports about its own work.
  */
 
-const VERIFY_COMMAND = 'npm run verify';
+const DEFAULT_VERIFY_COMMAND = 'npm run verify';
 /** `npm run verify` builds the Go server and the web bundle. */
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000;
 
 const NO_FIX = { attempted: false, applied: false } as const;
 const NOT_VERIFIED = { ran: false, passed: false, details: '' } as const;
 
-function shellFor(requestContext: Parameters<typeof resolveResolutionContext>[0]): Shell {
-  const { workingDirectory, env } = resolveResolutionContext(requestContext);
-  return createShell({ cwd: workingDirectory, env });
+function shellFor(requestContext: Parameters<typeof resolveResolutionContext>[0], abortSignal?: AbortSignal): Shell {
+  const { workingDirectory, env, signal } = resolveResolutionContext(requestContext);
+  const combinedSignal = signal && abortSignal ? AbortSignal.any([signal, abortSignal]) : (signal ?? abortSignal);
+  return createShell({ cwd: workingDirectory, env, signal: combinedSignal });
 }
 
-async function shortHead(shell: Shell): Promise<string> {
-  const result = await shell('git rev-parse --short HEAD');
+function verifyCommand(requestContext: Parameters<typeof resolveResolutionContext>[0]): string {
+  return resolveResolutionContext(requestContext).verifyCommand ?? DEFAULT_VERIFY_COMMAND;
+}
+
+async function head(shell: Shell): Promise<string> {
+  const result = await shell('git rev-parse HEAD');
   if (result.exitCode !== 0) throw new Error(`git rev-parse failed: ${commandError(result)}`);
   return result.stdout.trim();
 }
@@ -50,6 +55,15 @@ async function workingTree(shell: Shell): Promise<string> {
   const status = await shell('git status --porcelain --untracked-files=all');
   if (status.exitCode !== 0) throw new Error(`git status failed: ${commandError(status)}`);
   return status.stdout.trim();
+}
+
+/** A landable fix is exactly one descendant commit, not rewritten history. */
+export async function hasSingleFixCommit(shell: Shell, baseSha: string): Promise<boolean> {
+  const history = await shell(
+    `git merge-base --is-ancestor ${shellQuote(baseSha)} HEAD && ` +
+      `git rev-list --count ${shellQuote(baseSha)}..HEAD`,
+  );
+  return history.exitCode === 0 && history.stdout.trim() === '1';
 }
 
 /**
@@ -81,9 +95,6 @@ const Triaged = v.object({
   issueNumber: v.number(),
   triage: Triage,
 });
-
-/** All the coder agent is asked to report; whether it worked is measured, not asked. */
-const FixSummary = v.object({ summary: v.string() });
 
 const FixDraft = v.object({
   issueNumber: v.number(),
@@ -142,7 +153,7 @@ const triage = createStep({
   description: 'Classify the issue into exactly one category, using any attached screenshots.',
   inputSchema: standard(IssueState),
   outputSchema: standard(Triaged),
-  execute: async ({ inputData, requestContext, mastra }) => {
+  execute: async ({ inputData, requestContext, mastra, abortSignal }) => {
     const { github } = resolveResolutionContext(requestContext);
     const images = await github.fetchImages(inputData.imageUrls);
     const instructions =
@@ -169,6 +180,7 @@ const triage = createStep({
       ],
       {
         requestContext,
+        abortSignal,
         structuredOutput: { schema: standard(Triage), jsonPromptInjection: 'auto' },
       },
     );
@@ -216,15 +228,16 @@ const implementFix = createStep({
   description: 'Let the coding agent edit the checkout and commit its change.',
   inputSchema: standard(Triaged),
   outputSchema: standard(FixDraft),
-  execute: async ({ inputData, requestContext, mastra }) => {
-    const shell = shellFor(requestContext);
+  execute: async ({ inputData, requestContext, mastra, abortSignal }) => {
+    const shell = shellFor(requestContext, abortSignal);
     await prepareCheckout(shell);
-    const baseSha = await shortHead(shell);
+    const baseSha = await head(shell);
     const { issueNumber } = inputData;
+    const verify = verifyCommand(requestContext);
 
-    const response = await mastra.getAgent('coderAgent').generate(
+    await mastra.getAgent('coderAgent').generate(
       `Implement the smallest correct fix for issue #${issueNumber}. Edit only the files the fix ` +
-        `requires. Check your work by running \`${VERIFY_COMMAND}\` from the repository root and iterate ` +
+        `requires. Check your work by running \`${verify}\` from the repository root and iterate ` +
         'until it passes. Then commit everything with `git add -A && git commit` using a message of the ' +
         `form "Address issue #${issueNumber}: <summary>" — do NOT use auto-close keywords like "fixes" ` +
         'or "closes", because the workflow closes the issue itself. Leave no uncommitted changes behind. ' +
@@ -232,15 +245,17 @@ const implementFix = createStep({
         `\n\n<issue_triage>\n${inputData.triage.category}: ${inputData.triage.reason}\n</issue_triage>`,
       {
         requestContext,
+        abortSignal,
         maxSteps: 80,
-        structuredOutput: { schema: standard(FixSummary), jsonPromptInjection: 'auto' },
       },
     );
 
     return {
       issueNumber,
       triage: inputData.triage,
-      summary: v.parse(FixSummary, response.object).summary,
+      // Git and the independent verification step determine success. Do not
+      // make landing depend on the coder also producing a structured summary.
+      summary: `Address issue #${issueNumber}`,
       baseSha,
     };
   },
@@ -257,10 +272,10 @@ const verifyFix = createStep({
   outputSchema: standard(FixOutcome),
   // Pure measurement, so retrying it is always safe.
   retries: 1,
-  execute: async ({ inputData, requestContext }) => {
-    const shell = shellFor(requestContext);
+  execute: async ({ inputData, requestContext, abortSignal }) => {
+    const shell = shellFor(requestContext, abortSignal);
     const { baseSha, ...carried } = inputData;
-    const sha = await shortHead(shell);
+    const sha = await head(shell);
     const dirty = await workingTree(shell);
 
     if (sha === baseSha || dirty) {
@@ -275,7 +290,20 @@ const verifyFix = createStep({
       };
     }
 
-    const verify = await shell(VERIFY_COMMAND, { timeoutMs: VERIFY_TIMEOUT_MS });
+    if (!(await hasSingleFixCommit(shell, baseSha))) {
+      return {
+        ...carried,
+        commitSha: null,
+        verification: {
+          ran: false,
+          passed: false,
+          details: 'the fix must be exactly one commit based on the original HEAD',
+        },
+      };
+    }
+
+    const command = verifyCommand(requestContext);
+    const verify = await shell(command, { timeoutMs: VERIFY_TIMEOUT_MS });
     return {
       ...carried,
       commitSha: sha,
@@ -284,8 +312,8 @@ const verifyFix = createStep({
         passed: verify.exitCode === 0,
         details:
           verify.exitCode === 0
-            ? `${VERIFY_COMMAND} passed`
-            : `${VERIFY_COMMAND} failed: ${commandError(verify)}`,
+            ? `${command} passed`
+            : `${command} failed: ${commandError(verify)}`,
       },
     };
   },

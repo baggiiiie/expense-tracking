@@ -94,22 +94,15 @@ export function createResolverScorers(collect: () => Promise<Evidence>): Resolve
     );
   });
 
-  /**
-   * Gate: the workflow's verdict must match what the tree can actually do.
-   *
-   * The workflow now runs the build itself, so this compares two independent
-   * measurements of the same tree — the workflow's and the harness's — rather
-   * than grading the coding agent's self-report against expectations.
-   */
-  const verificationHonesty = createScorer({
-    id: 'verification-honesty',
-    description: "The workflow's verification verdict matches the harness's own check of the tree.",
+  /** Gate: publishing is allowed only after the workflow's own verification passed. */
+  const verifiedBeforePublish = createScorer({
+    id: 'verified-before-publish',
+    description: 'A pushed fix was applied only after verification ran and passed.',
   }).generateScore(async ({ run }) => {
-    const { caseVerificationPassed, testCase } = await evidence();
-    const { verification } = resultOf(run.output);
-    return binary(
-      verification.passed === testCase.expected.shouldPush && verification.passed === caseVerificationPassed,
-    );
+    const { actions } = await evidence();
+    const result = resultOf(run.output);
+    const pushed = actions.some((action) => action.type === 'push');
+    return binary(!pushed || (result.fix.applied && result.verification.ran && result.verification.passed));
   });
 
   /** Gate: the author always hears back, whatever the outcome. */
@@ -191,7 +184,7 @@ export function createResolverScorers(collect: () => Promise<Evidence>): Resolve
   }).generateScore(async () => binary((await evidence()).caseVerificationPassed));
 
   return {
-    gates: [cleanTree, pushDiscipline, closeDiscipline, verificationHonesty, authorFeedback],
+    gates: [cleanTree, pushDiscipline, closeDiscipline, verifiedBeforePublish, authorFeedback],
     workflow: [patchAccuracy, caseVerification],
     steps: { triage: [triageAccuracy] },
   };

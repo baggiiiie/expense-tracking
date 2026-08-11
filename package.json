@@ -1,9 +1,9 @@
 {
-  "name": "expense-tracking-flue",
+  "name": "expense-tracking-automation",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
+  "description": "GitHub issue automation for the expense-tracking project.",
   "scripts": {
     "dev": "mastra dev",
     "eval": "vitest run --config evals/vitest.config.ts",

@@ -17,6 +17,13 @@ if (!issueText || !/^[1-9]\d*$/.test(issueText)) {
   console.error('usage: npm run resolve-issue -- --issue <positive integer>');
   process.exit(2);
 }
+if (process.env.CI !== 'true' && process.env.RESOLVER_DISPOSABLE !== '1') {
+  console.error(
+    'The coding agent may run repository code and must use a disposable runner. ' +
+      'Set RESOLVER_DISPOSABLE=1 only inside a throwaway VM or container.',
+  );
+  process.exit(2);
+}
 
 const controller = new AbortController();
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

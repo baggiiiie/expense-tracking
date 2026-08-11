@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { createProdGithub, extractImageUrls } from '../src/mastra/integrations/github.ts';
 import { checkoutEnv } from '../src/mastra/runtime.ts';
-import { prepareCheckout } from '../src/mastra/workflows/resolve-issue.ts';
+import { hasSingleFixCommit, prepareCheckout } from '../src/mastra/workflows/resolve-issue.ts';
 import { isFixable } from '../src/mastra/workflows/schemas.ts';
 
 describe('checkout environment', () => {
@@ -40,6 +40,18 @@ describe('checkout preflight', () => {
       prepareCheckout(shell),
       /requires a clean disposable checkout[\s\S]*existing\.txt[\s\S]*untracked\.txt/,
     );
+  });
+
+  it('only accepts one commit descended from the original HEAD', async () => {
+    const history = (exitCode: number, count: string) => async () => ({
+      exitCode,
+      stdout: count,
+      stderr: '',
+    });
+
+    assert.equal(await hasSingleFixCommit(history(0, '1\n'), 'abc123'), true);
+    assert.equal(await hasSingleFixCommit(history(0, '2\n'), 'abc123'), false);
+    assert.equal(await hasSingleFixCommit(history(1, ''), 'abc123'), false);
   });
 });
 

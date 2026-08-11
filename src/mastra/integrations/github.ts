@@ -1,5 +1,6 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { commandError, createShell, shellQuote, type Shell, type ShellResult } from './shell.ts';
 
@@ -177,12 +178,17 @@ export function createProdGithub(options: {
       // Write the body to a file rather than interpolating it into the command:
       // model-authored markdown contains backticks and quotes that the shell
       // would otherwise reinterpret.
-      const path = `${tmpdir()}/mastra-resolve-issue-${number}-comment.md`;
-      await writeFile(path, body, 'utf8');
-      requireSuccess(
-        await shell(`gh issue comment ${number} --body-file ${shellQuote(path)}`),
-        'gh issue comment',
-      );
+      const directory = await mkdtemp(path.join(tmpdir(), 'mastra-resolve-issue-'));
+      const bodyFile = path.join(directory, 'comment.md');
+      try {
+        await writeFile(bodyFile, body, 'utf8');
+        requireSuccess(
+          await shell(`gh issue comment ${number} --body-file ${shellQuote(bodyFile)}`),
+          'gh issue comment',
+        );
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     },
     async close(number, reason) {
       requireSuccess(await shell(`gh issue close ${number} --reason ${shellQuote(reason)}`), 'gh issue close');
