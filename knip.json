@@ -1,11 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "entry": [
+    "scripts/*.ts",
+    "tests/*.test.ts",
+    "evals/*.eval.ts",
     ".flue/agents/*.ts",
     ".flue/scripts/*.mjs",
     ".flue/tests/*.test.ts",
     ".flue/evals/*.eval.ts"
   ],
-  "project": [".flue/**/*.{ts,mjs}"],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "evals/**/*.ts", ".flue/**/*.{ts,mjs}"],
   "ignoreBinaries": ["build", "go"]
 }

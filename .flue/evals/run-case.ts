@@ -5,6 +5,7 @@ import { init } from '@flue/runtime';
 import { local, start } from '@flue/runtime/node';
 import * as v from 'valibot';
 
+import { normalizePatch } from '../../src/shared/issue-resolution.ts';
 import { useIssueResolver } from '../agents/issue-resolver.ts';
 import { PayloadSchema, Result, type ResultType } from '../workflows/resolve-issue.ts';
 import { type GitHubIssue } from '../workflows/github.ts';
@@ -17,18 +18,6 @@ import {
   createRepository,
   git,
 } from './repository-fixture.ts';
-
-function normalizePatch(patch: string): string {
-  return `${patch
-    .replaceAll('\r\n', '\n')
-    .split('\n')
-    .filter(
-      (line) =>
-        !line.startsWith('index ') && !line.startsWith('@@') && !line.startsWith(' '),
-    )
-    .join('\n')
-    .trimEnd()}\n`;
-}
 
 export async function runCase(name: string, keepWorkspace: boolean) {
   const { directory, value: testCase } = await loadCase(name);

@@ -5,22 +5,29 @@
   "type": "module",
   "description": "Flue agents for the expense-tracking project (GitHub issue automation).",
   "scripts": {
-    "eval": "vitest run --config .flue/evals/vitest.config.ts",
-    "resolve-issue": "node .flue/scripts/resolve-issue.mjs",
-    "test": "node --test .flue/tests/resolve-issue.test.ts",
+    "dev": "mastra dev",
+    "eval": "vitest run --config evals/vitest.config.ts",
+    "eval:flue": "vitest run --config .flue/evals/vitest.config.ts",
+    "resolve-issue": "node scripts/resolve-issue.ts",
+    "resolve-issue:flue": "node .flue/scripts/resolve-issue.mjs",
+    "test": "node --test tests/resolve-issue.test.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run verify:web && npm run verify:server",
     "verify:web": "cd server/web && pnpm install --frozen-lockfile && pnpm build",
     "verify:server": "cd server && go build ./... && go test ./..."
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.37",
     "@earendil-works/pi-ai": "^0.83.0",
     "@flue/runtime": "^2.0.2",
+    "@mastra/core": "^1.57.0",
+    "@valibot/to-json-schema": "^1.7.1",
     "valibot": "latest"
   },
   "devDependencies": {
     "@flue/cli": "^2.0.2",
     "agent-browser": "0.32.4",
+    "mastra": "^1.23.0",
     "typescript": "latest",
     "vitest": "^4.1.10"
   }

@@ -1,6 +1,7 @@
 import { type FlueHarness } from '@flue/runtime';
 import * as v from 'valibot';
 
+import { CLOSABLE_CATEGORIES, FIXABLE_CATEGORIES, TriageCategory } from '../../src/shared/issue-resolution.ts';
 import { commandError, type ShellResult } from './shell.ts';
 import type { Github } from './github.ts';
 import type { WebDemo } from './web-demo.ts';
@@ -36,7 +37,6 @@ export const PayloadSchema = v.object({
 export type Payload = v.InferOutput<typeof PayloadSchema>;
 
 
-const TriageCategory = v.picklist(['bug', 'feature', 'invalid', 'duplicate', 'stale', 'unclear']);
 // The triage prompt's output, also reported in the workflow Result. For
 // categories the workflow won't fix, `reason` is posted to the issue author.
 const Triage = v.object({
@@ -136,9 +136,9 @@ export async function resolveIssue(
   );
   // 3. Not a fixable bug/feature: post the reason. Close the clearly-terminal
   // categories (invalid/duplicate/stale); leave unclear or unvalidated open.
-  if (!triage.valid || (triage.category !== 'bug' && triage.category !== 'feature')) {
+  if (!triage.valid || !FIXABLE_CATEGORIES.includes(triage.category)) {
     await github.comment(n, triage.reason);
-    const close = triage.valid && ['invalid', 'duplicate', 'stale'].includes(triage.category);
+    const close = triage.valid && CLOSABLE_CATEGORIES.includes(triage.category);
     if (close) await github.close(n, 'not planned');
     return triageResult(triage, close);
   }

@@ -8,6 +8,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "agents/**/*.ts", "workflows/**/*.ts", ".flue/**/*.ts"],
+  "include": ["src/**/*.ts", "agents/**/*.ts", "workflows/**/*.ts", ".flue/**/*.ts", "evals/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }
