@@ -13,6 +13,8 @@ describe('checkout environment', () => {
       GH_TOKEN: 'ghp_secret',
       ANTHROPIC_API_KEY: 'sk-secret',
       AWS_SECRET_ACCESS_KEY: 'aws-secret',
+      CLOUDFLARE_API_TOKEN: 'cf-secret',
+      GITHUB_OUTPUT: '/runner/output',
       GOCACHE: '/cache/go',
     });
 
@@ -21,6 +23,8 @@ describe('checkout environment', () => {
     assert.equal(env.GH_TOKEN, undefined);
     assert.equal(env.ANTHROPIC_API_KEY, undefined);
     assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
+    assert.equal(env.CLOUDFLARE_API_TOKEN, undefined);
+    assert.equal(env.GITHUB_OUTPUT, undefined);
   });
 
   it('never lets a command block on a credential prompt', () => {

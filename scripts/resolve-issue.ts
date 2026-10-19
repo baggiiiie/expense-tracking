@@ -1,3 +1,5 @@
+import { appendFile } from 'node:fs/promises';
+
 import { resolveIssue } from '../src/mastra/resolve.ts';
 
 /**
@@ -33,6 +35,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 try {
   const result = await resolveIssue({ issueNumber: Number(issueText) }, { signal: controller.signal });
   console.log(JSON.stringify(result, null, 2));
+  if (process.env.GITHUB_OUTPUT) {
+    await appendFile(process.env.GITHUB_OUTPUT, `applied=${result.fix.applied}\n`);
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

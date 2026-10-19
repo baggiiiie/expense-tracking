@@ -1,5 +1,7 @@
 # Expense Tracking
 
+> **Production web app:** runs on Cloudflare Workers + D1, with backend source in `worker/` and Svelte UI in `server/web/`. See [worker/README.md](worker/README.md) for the feedback → automated fix → deployment pipeline. The Go server described below is the legacy server/CLI, not the live web backend.
+
 A personal, single-user expense tracker with three interfaces: a Go server (source of truth), a CLI, and an offline-first iOS app (SwiftUI).
 
 ## System Overview

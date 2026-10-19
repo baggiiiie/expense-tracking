@@ -1,11 +1,7 @@
 name: Server Image
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'server/**'
-      - '.github/workflows/server-image.yml'
+  # Legacy Go image only. Production web releases use deploy-worker.yml.
   workflow_dispatch:
 
 permissions:

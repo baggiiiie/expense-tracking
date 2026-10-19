@@ -29,7 +29,7 @@ import {
  */
 
 const DEFAULT_VERIFY_COMMAND = 'npm run verify';
-/** `npm run verify` builds the Go server and the web bundle. */
+/** `npm run verify` tests automation, builds web/Worker, and checks the legacy Go CLI. */
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000;
 
 const NO_FIX = { attempted: false, applied: false } as const;

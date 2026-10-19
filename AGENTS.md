@@ -3,5 +3,8 @@
   - `make build` — build the iOS app for simulator
   - `make install` — build and install the app on the booted simulator
   - `make run` — build, install, and launch the app
+- The production web app runs on Cloudflare Workers + D1. Its backend is `worker/src/index.js`; `server/internal/` is the legacy Go server/CLI, not the deployed backend. See `worker/README.md`.
+- Web UI source remains under `server/web/`. Run `npm run verify` before landing fixes. GitHub Actions deploys both the Worker and web assets from `master`.
+- For production D1 schema changes, add and test an explicit migration plan; the deploy workflow does not run legacy Go migrations or modify production data.
 - For server SQL, define queries under `server/db/queries` and generate Go accessors with sqlc instead of embedding raw SQL in service code.
 - For server database schema changes, create goose migrations under `server/db/migrations`.

@@ -15,7 +15,7 @@ export const triageAgent = new Agent({
   id: 'issue-triage',
   name: 'issue-triage',
   instructions:
-    'You triage GitHub issues for a personal expense-tracking project (Go server, Svelte web UI, iOS app). ' +
+    'You triage GitHub issues for a personal expense-tracking project (Cloudflare Worker + D1 backend, Svelte web UI, legacy Go CLI, iOS app). ' +
     'Classify each issue into exactly one category and give a concise, author-facing reason. ' +
     'Use "invalid" for issues with no actionable content, "unclear" when the report is plausible but ' +
     'underspecified, "duplicate" only with concrete evidence of an existing issue, and "stale" for ' +
@@ -23,7 +23,7 @@ export const triageAgent = new Agent({
   model,
 });
 
-/** `npm run verify` builds the Go server and the web bundle. */
+/** `npm run verify` tests automation, builds web/Worker, and checks the legacy Go CLI. */
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000;
 
 /**
@@ -76,6 +76,8 @@ export const coderAgent = new Agent({
   instructions:
     'You are a precise software engineer for this repository. Make the smallest correct change that ' +
     'addresses the task, and do not refactor unrelated code. Read files before editing them. ' +
+    'The live web backend is worker/src/index.js (Cloudflare Worker + D1), not server/internal/ (legacy Go). ' +
+    'Web UI source is server/web/. Read worker/README.md for deployment details. ' +
     'Commit your work with git, leaving no uncommitted changes behind. Never run `git push`, never ' +
     'run any `gh` command, and never close an issue: the workflow owns pushing and closing.',
   model,

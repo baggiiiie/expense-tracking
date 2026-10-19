@@ -1,0 +1,61 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'worker/**'
+      - 'server/web/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+  # GITHUB_TOKEN pushes do not emit push-triggered workflow runs.
+  # The resolver therefore calls this workflow explicitly after landing a fix.
+  workflow_call:
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-expense-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require scoped Cloudflare credential
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo '::error::Add the repository secret CLOUDFLARE_API_TOKEN. See worker/README.md.'
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          # Includes bot commits made earlier in the calling resolver workflow.
+          # Serial deployments always build the latest master, not a stale event SHA.
+          ref: master
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:web
+      - run: npm run verify:worker
+      - name: Deploy Worker and web assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy:worker -- --var BUILD_SHA:$(git rev-parse HEAD)
+      - name: Verify live release
+        run: node scripts/smoke-worker.mjs --sha "$(git rev-parse HEAD)"

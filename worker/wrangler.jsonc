@@ -1,0 +1,24 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "expense-tracking",
+  "account_id": "08bcab54b1a082774afd65469a84f346",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-03",
+  "workers_dev": true,
+  "assets": {
+    "directory": "../server/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "expense-tracking",
+    "database_id": "39ef07a1-68ed-43a1-97d5-312c00932ddc"
+  }],
+  "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "expense.yingchao.dev/*", "zone_name": "yingchao.dev" },
+    { "pattern": "app.yingchao.dev/expense*", "zone_name": "yingchao.dev" }
+  ]
+}

@@ -12,8 +12,10 @@
     "resolve-issue:flue": "node .flue/scripts/resolve-issue.mjs",
     "test": "node --test tests/resolve-issue.test.ts",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run verify:web && npm run verify:server",
+    "verify": "npm test && npm run verify:web && npm run verify:worker && npm run verify:server",
     "verify:web": "cd server/web && pnpm install --frozen-lockfile && pnpm build",
+    "verify:worker": "node --test worker/tests/*.test.mjs && wrangler deploy --config worker/wrangler.jsonc --dry-run",
+    "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc",
     "verify:server": "cd server && go build ./... && go test ./..."
   },
   "dependencies": {
@@ -29,6 +31,7 @@
     "agent-browser": "0.32.4",
     "mastra": "^1.23.0",
     "typescript": "latest",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "4.128.0"
   }
 }
