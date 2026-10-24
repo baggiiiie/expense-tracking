@@ -67,6 +67,7 @@ export type Preferences = {
 	currency: string;
 	timezone: string;
 	date_format: string;
+	wallet_suggestion_expiry_days: number;
 };
 
 export type ExpenseListResponse = {

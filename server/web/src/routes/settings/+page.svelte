@@ -178,6 +178,19 @@
 					<label for="timezone">Timezone</label>
 					<input id="timezone" type="text" bind:value={prefs.timezone} />
 				</div>
+				<div class="field">
+					<label for="wallet-expiry">Wallet suggestion expiry (days)</label>
+					<input
+						id="wallet-expiry"
+						type="number"
+						min="1"
+						step="1"
+						required
+						aria-describedby="wallet-expiry-hint"
+						bind:value={prefs.wallet_suggestion_expiry_days}
+					/>
+					<small id="wallet-expiry-hint">Pending suggestions are automatically dismissed this many days after capture. Default: 7 days. Accepted expenses are kept.</small>
+				</div>
 				<button type="submit" class="btn-primary" disabled={prefsBusy}>
 					{prefsBusy ? 'Saving…' : 'Save Preferences'}
 				</button>

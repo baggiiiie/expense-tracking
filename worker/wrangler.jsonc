@@ -16,6 +16,7 @@
     "database_name": "expense-tracking",
     "database_id": "39ef07a1-68ed-43a1-97d5-312c00932ddc"
   }],
+  "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": true },
   "routes": [
     { "pattern": "expense.yingchao.dev/*", "zone_name": "yingchao.dev" },

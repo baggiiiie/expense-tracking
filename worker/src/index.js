@@ -172,17 +172,17 @@ async function currentServerVersion(db) {
 __name(currentServerVersion, "currentServerVersion");
 async function getPreferences(db) {
   const row = await first(
-    db.prepare("SELECT currency, timezone, date_format FROM app_preferences WHERE id = 1")
+    db.prepare("SELECT currency, timezone, date_format, wallet_suggestion_expiry_days FROM app_preferences WHERE id = 1")
   );
   if (row) return row;
-  return { currency: "SGD", timezone: "Asia/Singapore", date_format: "2006-01-02" };
+  return { currency: "SGD", timezone: "Asia/Singapore", date_format: "2006-01-02", wallet_suggestion_expiry_days: 7 };
 }
 __name(getPreferences, "getPreferences");
 async function savePreferences(db, prefs) {
   await run(
     db.prepare(
-      "INSERT INTO app_preferences (id, currency, timezone, date_format) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET currency=excluded.currency, timezone=excluded.timezone, date_format=excluded.date_format"
-    ).bind(prefs.currency, prefs.timezone, prefs.date_format)
+      "INSERT INTO app_preferences (id, currency, timezone, date_format, wallet_suggestion_expiry_days) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET currency=excluded.currency, timezone=excluded.timezone, date_format=excluded.date_format, wallet_suggestion_expiry_days=excluded.wallet_suggestion_expiry_days"
+    ).bind(prefs.currency, prefs.timezone, prefs.date_format, prefs.wallet_suggestion_expiry_days)
   );
 }
 __name(savePreferences, "savePreferences");
@@ -1029,6 +1029,13 @@ async function pushRecurring(db, input, now) {
 __name(pushRecurring, "pushRecurring");
 
 // src/wallet.ts
+async function expireWalletSuggestions(db, now) {
+  const prefs = await getPreferences(db);
+  await run(db.prepare(
+    `UPDATE wallet_suggestions SET status = 'dismissed', updated_at = ?, client_updated_at = ?
+     WHERE status = 'pending' AND captured_at <= ?`
+  ).bind(now, now, now - prefs.wallet_suggestion_expiry_days * 86400));
+}
 var walletSelect = "id, amount, currency, merchant, card_name, captured_at, source, status, linked_expense_id, created_at, updated_at, client_updated_at, server_version";
 var ErrWalletSuggestionNotFound = Object.assign(new Error("wallet suggestion not found"), { status: 404 });
 var ErrWalletSuggestionNotPending = Object.assign(new Error("wallet suggestion is not pending"), {
@@ -1096,6 +1103,7 @@ async function createWallet(db, input, now) {
       clientUpdatedAt
     )
   );
+  await expireWalletSuggestions(db, now);
   const row = await getWallet(db, id);
   if (!row) throw new Error("creating wallet suggestion");
   return walletFromRow(row);
@@ -1270,6 +1278,9 @@ async function serveAssets(env, request, path, prefix) {
 }
 __name(serveAssets, "serveAssets");
 var index_default = {
+  async scheduled(controller, env) {
+    await expireWalletSuggestions(env.DB, nowUnix());
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === EXPENSE_PREFIX) {
@@ -1327,8 +1338,18 @@ async function handleAPI(request, env, path, prefix, id) {
     if (body.currency != null) prefs.currency = body.currency;
     if (body.timezone != null) prefs.timezone = body.timezone;
     if (body.date_format != null) prefs.date_format = body.date_format;
+    if (Object.hasOwn(body, "wallet_suggestion_expiry_days")) {
+      if (!Number.isSafeInteger(body.wallet_suggestion_expiry_days) || body.wallet_suggestion_expiry_days < 1) {
+        return jsonError(400, "wallet suggestion expiry must be a positive whole number of days", id);
+      }
+      prefs.wallet_suggestion_expiry_days = body.wallet_suggestion_expiry_days;
+    }
     await savePreferences(db, prefs);
+    await expireWalletSuggestions(db, now);
     return json(200, await getPreferences(db));
+  }
+  if (path.startsWith("/api/wallet-suggestions") || path === "/api/sync/pull" || path === "/api/sync/push") {
+    await expireWalletSuggestions(db, now);
   }
   if (method === "GET" && path === "/api/sync/pull") {
     const sinceStr = url.searchParams.get("since");
